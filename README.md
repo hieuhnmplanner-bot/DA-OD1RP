@@ -35,3 +35,18 @@ git push                      # Streamlit Cloud tự deploy lại
 ```
 
 > ⚠️ Repo phải để **Private** (dữ liệu có UID khách). File thô & `outputs/orders_full.csv` đã được `.gitignore`.
+
+## Khớp số với DA1RP (seed 1 lần — tùy chọn)
+Đơn **đã học hết / đã gia hạn** có `end_date` "đóng băng" trong DA1RP (từ lịch sử DB).
+Bản standalone chạy lần đầu không có lịch sử → tính lại từ `purchase + thời lượng` nên lệch ~1 tháng
+ở vài đơn. Để khớp ngay (rồi vẫn độc lập về sau):
+1. Export DA1RP `remaining_lesson3` ra CSV (≥ 4 cột: `uid, order_id, end_date_n, remain_lesson_number`) — chỉ ĐỌC, không sửa DB.
+2. Đặt tên `da1rp_remaining_lesson3.csv` cạnh các script.
+3. Chạy:
+   ```bash
+   python seed_snapshot.py     # nạp end_date đã đóng băng vào state/snapshot_prev.csv
+   python run_etl.py           # đơn đã xong sẽ kế thừa end_date của DA1RP
+   ```
+Sau lần seed này, `state/snapshot_prev.csv` tự cập nhật mỗi ngày → **không cần DB nữa**.
+(Không seed cũng được: bản standalone tự "đóng băng" dần cho đơn mới khi chạy hằng ngày;
+chỉ các đơn đã kết thúc TRƯỚC khi dùng standalone là không tự sửa ngược được.)

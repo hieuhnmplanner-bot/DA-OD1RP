@@ -10,6 +10,10 @@ from config import SNAPSHOT_PREV
 TODAY = pd.Timestamp.now().normalize()
 YESTERDAY = TODAY - pd.Timedelta(days=1)
 
+def _normkey(s):
+    s = str(s).strip()
+    return s[:-2] if s.endswith('.0') else s
+
 
 def _dur(lessons):
     """duration ngay = (n//2)*7 + (n%2)*3.5  -- giong het DA1RP (gia dinh 2 buoi/tuan)."""
@@ -100,7 +104,7 @@ def build_orders(rl):
 def _apply_freeze(df):
     """Neu don da tung 'het' (remain=0) trong lan chay truoc -> giu nguyen end_date cu.
     Tranh end_date nhay thang giua cac ngay. Luu/doc state cuc bo (state/snapshot_prev.csv)."""
-    key = df["UID"].astype(str) + "|" + df["Order ID"].astype(str)
+    key = df["UID"].astype(str).map(_normkey) + "|" + df["Order ID"].astype(str).map(_normkey)
     if SNAPSHOT_PREV.exists():
         prev = pd.read_csv(SNAPSHOT_PREV, dtype=str)
         prev_map = dict(zip(prev["key"], prev["end_date_N"]))
@@ -108,10 +112,11 @@ def _apply_freeze(df):
         frozen = []
         for k, cur_end, rem in zip(key, df["end_date_N"], df["Remain_Lesson"]):
             pe = prev_map.get(k)
-            pr = prev_rem.get(k)
-            # da het ca hom qua lan hom nay -> giu end_date hom qua
-            if rem == 0 and pr is not None and pr == 0 and pe and str(pe) not in ("", "nan", "NaT"):
-                frozen.append(pd.to_datetime(pe, errors="coerce"))
+            # don da hoc het (remain=0) + co end_date trong snapshot (seed DA1RP hoac lan truoc)
+            # -> giu nguyen end_date do (DONG BANG, giong DA1RP). Don con active -> giu end_date tinh moi.
+            if rem == 0 and pe and str(pe) not in ("", "nan", "NaT"):
+                fe = pd.to_datetime(pe, errors="coerce")
+                frozen.append(fe if pd.notna(fe) else cur_end)
             else:
                 frozen.append(cur_end)
         df["end_date_N"] = pd.to_datetime(pd.Series(frozen, index=df.index))
