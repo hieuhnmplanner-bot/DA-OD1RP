@@ -1,0 +1,20 @@
+# Du lieu tho (NANG + co PII) - KHONG day len GitHub
+inputs/
+*.xlsx
+*.xls
+# File trung gian
+outputs/_stage*.csv
+outputs/orders*.csv
+# State cuc bo (snapshot ngay-qua-ngay)
+state/*.csv
+# Python
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+# Cho phep commit file nhe cho dashboard
+!outputs/dashboard_data.csv
+!dim_sale.csv
+
+# Ban dashboard cu o root (da thay bang outputs/dashboard_data.csv)
+/dashboard_data.csv
