@@ -4,6 +4,22 @@ import re
 import pandas as pd
 import numpy as np
 from unidecode import unidecode
+import io, time, zipfile
+
+
+def _read_excel_robust(path, sheet_name=0, tries=6):
+    """Doc Excel co retry: mount doi khi tra byte loi -> doc lai tu bytes da xac thuc zip."""
+    last = None
+    for k in range(tries):
+        try:
+            raw = open(path, "rb").read()
+            if not zipfile.is_zipfile(io.BytesIO(raw)):
+                raise OSError("zip chua hop le (mount chap chon)")
+            return pd.read_excel(io.BytesIO(raw), sheet_name=sheet_name)
+        except Exception as e:
+            last = e
+            time.sleep(1.0)
+    raise last
 
 SOURCE_MAP = {
     'Lives': 'Lives', '公海': 'Oversea', '广告': 'Online Marketing', '转介绍': 'Refer',
@@ -30,19 +46,19 @@ def _clean_uid_13(series):
 
 
 def load_revenue(latest):
-    hcm = pd.read_excel(latest["revenue_hcm"], sheet_name='REVENUE')
+    hcm = _read_excel_robust(latest["revenue_hcm"], 'REVENUE')
     hcm['package'] = hcm['Package'].apply(calculate_total_lessons)
     hcm = hcm[['Phone', 'UID', 'Pay Time', 'Real Pay(VND)', 'Payment Method', 'package', 'Type', 'Sales']]
     hcm['UID'] = hcm['UID'].astype(str).str.replace('.0', '', regex=False)
 
-    hn = pd.read_excel(latest["revenue_hn"], sheet_name='INCOME')
+    hn = _read_excel_robust(latest["revenue_hn"], 'INCOME')
     hn.columns = hn.columns.str.strip()
     hn = hn[['Phone', 'UID', 'Pay Time', 'Real Pay(VND)', 'Payment Method', '总 B (被推荐） 课数', 'Type', 'Sales']]
     hn['Pay Time'] = pd.to_datetime(hn['Pay Time'], errors='coerce')
     hn = hn.rename(columns={'总 B (被推荐） 课数': 'package'})
     hn['package'] = pd.to_numeric(hn['package'], errors='coerce').astype('Int64')
 
-    dn = pd.read_excel(latest["revenue_dn"], sheet_name='REVENUE')
+    dn = _read_excel_robust(latest["revenue_dn"], 'REVENUE')
     dn.columns = dn.columns.str.strip()
     dn['package'] = dn['Package'].apply(calculate_total_lessons)
     dn['UID'] = dn['UID'].astype(str).str.replace('.0', '', regex=False)
@@ -59,7 +75,7 @@ def load_revenue(latest):
 
 
 def load_remaining_lesson(latest):
-    rl = pd.read_excel(latest["remaining_lesson"])
+    rl = _read_excel_robust(latest["remaining_lesson"])
     rl['Order Price VND'] = rl['Order Price VND'].astype(str).str.replace('.', '', regex=False) + '0'
     rl['Order ID'] = rl['Order ID'].astype(str)
     rl = rl[~rl['UID'].isin([3174442996, 3298336217])]

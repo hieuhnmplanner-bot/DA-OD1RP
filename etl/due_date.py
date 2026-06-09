@@ -131,3 +131,43 @@ def _apply_freeze(df):
                         "remain": df["Remain_Lesson"].astype(int)})
     out.to_csv(SNAPSHOT_PREV, index=False, encoding="utf-8-sig")
     return df
+
+
+def recompute_status_renew(orders, revenue):
+    """Tinh lai status_renew dung 'don mua ke tiep' tu CA revenue + remaining_lesson (giong DA1RP).
+    Bat duoc don gia han chi co trong file doanh thu (chua len he thong bai hoc)."""
+    import numpy as np
+    o = orders.copy()
+    o["payment_N"] = pd.to_datetime(o["payment_N"], errors="coerce")
+    o["end_date_N"] = pd.to_datetime(o["end_date_N"], errors="coerce")
+
+    # Tap ngay mua moi UID = purchase tu orders + Pay Time tu revenue
+    rev = revenue.copy()
+    rev["UID"] = pd.to_numeric(rev["UID"], errors="coerce").astype("Int64")
+    rev["dt"] = pd.to_datetime(rev["Pay Time"], errors="coerce")
+    buys = {}
+    for uid, dt in zip(rev["UID"], rev["dt"]):
+        if pd.notna(uid) and pd.notna(dt):
+            buys.setdefault(uid, []).append(dt)
+    for uid, dt in zip(o["UID"], o["payment_N"]):
+        if pd.notna(uid) and pd.notna(dt):
+            buys.setdefault(uid, []).append(dt)
+    for uid in buys:
+        buys[uid] = sorted(set(buys[uid]))
+
+    def next_buy(uid, after):
+        arr = buys.get(uid, [])
+        for d in arr:
+            if pd.notna(after) and d > after + pd.Timedelta(days=1):  # don mua ke tiep that su
+                return d
+        return pd.NaT
+
+    nb = [next_buy(u, p) for u, p in zip(o["UID"], o["payment_N"])]
+    o["_next_buy"] = pd.to_datetime(pd.Series(nb, index=o.index))
+    diff = (o["end_date_N"].dt.floor("D") - o["_next_buy"].dt.floor("D")) / pd.Timedelta(days=1)
+    o["status_renew"] = np.select(
+        [diff > 30, (diff >= 1) & (diff <= 30), (diff >= -90) & (diff < 1), diff < -90],
+        ["Early Renewal", "On-time Renewal", "Late Renewal", "Return after End_date 90 days"],
+        default=None)
+    o.loc[o["Remain_Lesson"].eq(0) & o["status_renew"].isna(), "status_renew"] = "Expired"
+    return o.drop(columns=["_next_buy"])

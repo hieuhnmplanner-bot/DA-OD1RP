@@ -23,6 +23,7 @@ def main():
 
     # 3-5. Due date + value_chain + status
     orders = due_date.build_orders(rl)
+    orders = due_date.recompute_status_renew(orders, revenue)  # renewal tinh ca tu doanh thu
 
     # [GIONG DA1RP] Loai don gia tri thap: end_date >= 2026-02-01 VA gia < 300.000d
     _price = pd.to_numeric(orders["Order Price VND"], errors="coerce").fillna(0)
@@ -65,13 +66,15 @@ def main():
     out["status"] = orders["type_lesson"]
     out["account_status"] = orders["account_status"]
     out["status_renew"] = orders["status_renew"]
+    out["remain_lesson"] = pd.to_numeric(orders["Remain_Lesson"], errors="coerce")
+    out["order_num"] = pd.to_numeric(orders["order_num"], errors="coerce")
+    out["purchase_time"] = pd.to_datetime(orders["payment_N"], errors="coerce")
     out["source_type"] = orders.get("source_type", "Other")
     out["lessons_per_week_real"] = orders["lessons_per_week_real"]
 
-    # renewed = co don ke tiep cung value chain
+    # renewed = da gia han theo DA1RP: status_renew thuoc {Early, On-time, Late}
     out = out.sort_values(["uid", "value_chain", "vc_order_num"])
-    maxno = out.groupby(["uid", "value_chain"])["vc_order_num"].transform("max")
-    out["renewed"] = out["vc_order_num"] < maxno
+    out["renewed"] = out["status_renew"].isin(["Early Renewal", "On-time Renewal", "Late Renewal"])
     # ngay mua don ke tiep cung chain (de tinh timing)
     pay_dt = pd.to_datetime(orders.set_index([orders["UID"].astype(str), orders["Order ID"].astype(str)])["payment_N"], errors="coerce")
     out["_pay_dt"] = pd.to_datetime(orders["payment_N"].values, errors="coerce")

@@ -93,11 +93,21 @@ def render_tab(df, key):
         st.dataframe(g, use_container_width=True, hide_index=True)
 
     st.subheader("Bảng chi tiết")
-    show_cols = ["uid", "team", "sale", "teacher", "package", "value_chain",
-                 "vc_order_num", "end_date", "end_month", "status", "renewed",
-                 "next_pay_month", "renew_timing", "real_money"]
-    show_cols = [c for c in show_cols if c in df.columns]
-    detail = df[show_cols].sort_values(["end_month", "team", "uid"])
+    # Hien thi cot giong file DA1RP
+    colmap = [
+        ("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
+        ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
+        ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
+        ("end_date", "end_date_N"), ("order_num", "order_num"),
+    ]
+    cols = [(src, dst) for src, dst in colmap if src in df.columns]
+    detail = df[[c for c, _ in cols]].rename(columns=dict(cols))
+    for dc in ("Purchase Time", "end_date_N"):
+        if dc in detail.columns:
+            detail[dc] = pd.to_datetime(detail[dc], errors="coerce").dt.strftime("%Y-%m-%d")
+    sort_cols = [c for c in ["Sale Team", "UID"] if c in detail.columns]
+    if sort_cols:
+        detail = detail.sort_values(sort_cols)
     st.dataframe(detail, use_container_width=True, hide_index=True)
     st.download_button("⬇️ Tải bảng chi tiết (CSV)",
                        detail.to_csv(index=False).encode("utf-8-sig"),

@@ -21,3 +21,5 @@ __pycache__/
 da1rp_remaining_lesson3.csv
 _cmp_*
 dexport.csv
+_*.csv
+_*.xlsx
