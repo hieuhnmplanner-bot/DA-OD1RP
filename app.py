@@ -33,7 +33,7 @@ def load_data(path):
     df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
     df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
     for c in ["team", "sale", "teacher", "package", "status", "end_month",
-              "next_pay_month", "renew_timing", "value_chain"]:
+              "next_pay_month", "renew_timing", "value_chain", "status_renew"]:
         if c in df:
             df[c] = df[c].fillna("")
     return df
@@ -83,6 +83,17 @@ def render_tab(df, key):
     c2.metric("Số đơn đến hạn", f"{tot_orders:,}")
     c3.metric("Đã gia hạn", f"{tot_renew:,}")
     c4.metric("Tỷ lệ chuyển đổi", f"{conv:.1f}%")
+
+    # Breakdown gia han theo loai (de check nhanh voi DA1RP)
+    sr = df["status_renew"] if "status_renew" in df.columns else pd.Series([], dtype=str)
+    n_early = int((sr == "Early Renewal").sum())
+    n_ontime = int((sr == "On-time Renewal").sum())
+    n_late = int((sr == "Late Renewal").sum())
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("🟢 Early Renewal", f"{n_early:,}")
+    r2.metric("🔵 On-time Renewal", f"{n_ontime:,}")
+    r3.metric("🟡 Late Renewal", f"{n_late:,}")
+    r4.metric("Σ Tổng đã gia hạn", f"{n_early + n_ontime + n_late:,}")
 
     st.plotly_chart(combo_chart(g, "Số khách đến hạn & tỷ lệ chuyển đổi theo tháng (end_date)"),
                     use_container_width=True, key=f"chart_{key}")
@@ -136,9 +147,11 @@ if months:
     now = pd.Timestamp.now().strftime("%Y-%m")
     default_start = next((m for m in months if m >= (pd.Timestamp.now() - pd.DateOffset(months=6)).strftime("%Y-%m")), months[0])
     default_end = next((m for m in reversed(months) if m <= (pd.Timestamp.now() + pd.DateOffset(months=6)).strftime("%Y-%m")), months[-1])
-    m_start, m_end = st.sidebar.select_slider(
-        "Khoảng tháng (end_date)", options=months,
-        value=(default_start, default_end))
+    cfa, cfb = st.sidebar.columns(2)
+    m_start = cfa.selectbox("Từ tháng", months, index=months.index(default_start))
+    m_end = cfb.selectbox("Đến tháng", months, index=months.index(default_end))
+    if m_start > m_end:
+        m_start, m_end = m_end, m_start
 else:
     m_start, m_end = None, None
 
