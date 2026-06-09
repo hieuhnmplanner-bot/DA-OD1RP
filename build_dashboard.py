@@ -141,6 +141,8 @@ def main():
     print("   Khop 100% voi DA1RP (cung remaining_lesson3) + da co value_chain OD1->OD2.")
     j = out[out["end_month"] == "2026-06"]
     print("   Check 2026-06 status_renew:", j["status_renew"].value_counts().to_dict())
+    pm = out[out["end_month"].fillna("").str.startswith("2026")].groupby("end_month")["uid"].nunique()
+    print("   Khach den han per-thang 2026 (chart):", pm.to_dict())
 
 
 if __name__ == "__main__":

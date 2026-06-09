@@ -89,7 +89,8 @@ def render_tab(df, key):
     renewed = n_early + n_ontime + n_late
     conv = (renewed / tot_due * 100) if tot_due else 0
     rev_col = "renewal_payment" if "renewal_payment" in df.columns else "real_money"
-    renewal_rev = pd.to_numeric(df.loc[sr.isin(RENEWAL), rev_col], errors="coerce").sum()
+    rev_status = RENEWAL + ["Return after End_date 90 days"]
+    renewal_rev = pd.to_numeric(df.loc[sr.isin(rev_status), rev_col], errors="coerce").sum()
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Khách đến hạn (UID)", f"{tot_due:,}")
