@@ -27,7 +27,11 @@ LANG = {
         "filtering": "Đang lọc: {a} → {b} | {n} team | {o:,} đơn",
         "tab_all": "🧾 Tổng tất cả đơn hàng", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
         "tab2_cap": "Chỉ tính Order 1 của mỗi value chain (đơn đầu mỗi chu kỳ). 'Đã gia hạn' = đã mua Order 2 cùng chuỗi.",
-        "due": "Khách đến hạn (UID)", "conv": "Tỷ lệ chuyển đổi", "revenue": "Renewal Revenue",
+        "due": "Khách đến hạn (UID)", "revenue": "Renewal Revenue",
+        "crr": "CRR – Tỷ lệ gia hạn KH", "crr_h": "Số khách gia hạn / Số khách hết hạn trong kỳ",
+        "rrr": "RRR – Tỷ lệ gia hạn DT", "rrr_h": "Doanh thu gia hạn / Tổng giá trị gói hết hạn trong kỳ",
+        "upsell": "Upsell – Nâng giá trị", "upsell_h": "Giá trị đơn gia hạn mới / Giá trị đơn cũ (của nhóm đã gia hạn). >100% = khách chi nhiều hơn lần trước",
+        "rev_h": "Tổng doanh thu các đơn gia hạn (đơn kế tiếp)",
         "early": "🟢 Early Renewal", "ontime": "🔵 On-time Renewal", "late": "🟡 Late Renewal",
         "total": "Σ Tổng đã gia hạn",
         "chart_title": "Số khách đến hạn & tỷ lệ chuyển đổi theo tháng (end_date)",
@@ -45,7 +49,11 @@ LANG = {
         "filtering": "Filter: {a} → {b} | {n} teams | {o:,} orders",
         "tab_all": "🧾 All orders", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
         "tab2_cap": "Only Order 1 of each value chain. 'Renewed' = bought Order 2 in the same chain.",
-        "due": "Customers Due (UID)", "conv": "Retention rate", "revenue": "Renewal Revenue",
+        "due": "Customers Due (UID)", "revenue": "Renewal Revenue",
+        "crr": "CRR – Customer Renewal", "crr_h": "Renewed customers / Customers due in period",
+        "rrr": "RRR – Revenue Renewal", "rrr_h": "Renewal revenue / Total value of expiring packages",
+        "upsell": "Upsell – Value Uplift", "upsell_h": "New renewal value / Old order value (of renewers). >100% = spending more than before",
+        "rev_h": "Total revenue of renewal (next) orders",
         "early": "🟢 Early Renewal", "ontime": "🔵 On-time Renewal", "late": "🟡 Late Renewal",
         "total": "Σ Total Renewed",
         "chart_title": "Customers due & retention rate by month (end_date)",
@@ -63,7 +71,11 @@ LANG = {
         "filtering": "筛选: {a} → {b} | {n} 个团队 | {o:,} 单",
         "tab_all": "🧾 全部订单", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
         "tab2_cap": "仅统计每个学习周期的第 1 单。'已续费' = 同周期购买了第 2 单。",
-        "due": "到期客户数 (UID)", "conv": "续费率", "revenue": "续费金额",
+        "due": "到期客户数 (UID)", "revenue": "续费金额",
+        "crr": "CRR – 客户续费率", "crr_h": "续费客户数 / 当期到期客户数",
+        "rrr": "RRR – 收入续费率", "rrr_h": "续费收入 / 当期到期套餐总价值",
+        "upsell": "Upsell – 升单率", "upsell_h": "新续费金额 / 旧订单金额（仅续费客户）。>100% = 比上次花更多",
+        "rev_h": "续费(下一单)订单的总收入",
         "early": "🟢 提前续费", "ontime": "🔵 准时续费", "late": "🟡 延迟续费",
         "total": "Σ 续费合计",
         "chart_title": "按月到期客户数与续费率 (end_date)",
@@ -74,6 +86,14 @@ LANG = {
         "download": "⬇️ 下载明细 (CSV)", "no_data": "筛选后无数据。",
     },
 }
+
+
+def _fmt_money(v, lang):
+    v = float(v or 0)
+    if lang == "中文":
+        return f"{v/1e8:,.2f} 亿"      # 1 亿 = 10^8
+    suffix = " tỷ" if lang == "Tiếng Việt" else " B"
+    return f"{v/1e9:,.2f}{suffix}"     # 1 ty / 1 billion = 10^9
 
 
 @st.cache_data(show_spinner=False)
@@ -130,19 +150,30 @@ def render_tab(df, key, t):
     no = int(df.loc[sr == "On-time Renewal", "uid"].nunique())
     nl = int(df.loc[sr == "Late Renewal", "uid"].nunique())
     renewed = ne + no + nl
-    conv = (renewed / due * 100) if due else 0
+    crr = (renewed / due * 100) if due else 0
     rev_col = "renewal_payment" if "renewal_payment" in df.columns else "real_money"
-    rev = pd.to_numeric(df.loc[sr.isin(RENEWAL_REV), rev_col], errors="coerce").sum()
+    ren_mask = sr.isin(RENEWAL_REV)
+    money = pd.to_numeric(df["real_money"], errors="coerce").fillna(0)
+    renew_new = pd.to_numeric(df.loc[ren_mask, rev_col], errors="coerce").fillna(0).sum()   # don gia han moi
+    renew_old = money[ren_mask].sum()                                                       # don cu cua nhom gia han
+    expiring_total = money.sum()                                                            # tong gia tri don het han
+    rrr = (renew_new / expiring_total * 100) if expiring_total else 0
+    upsell = (renew_new / renew_old * 100) if renew_old else 0
 
-    # TAT CA CARD TREN 1 HANG
-    c = st.columns(7)
-    c[0].metric(t["due"], f"{due:,}")
-    c[1].metric(t["early"], f"{ne:,}")
-    c[2].metric(t["ontime"], f"{no:,}")
-    c[3].metric(t["late"], f"{nl:,}")
-    c[4].metric(t["total"], f"{renewed:,}")
-    c[5].metric(t["conv"], f"{conv:.1f}%")
-    c[6].metric(t["revenue"], f"{rev:,.0f}")
+    # Hang 1: chi so chinh (ty le + doanh thu)
+    a = st.columns(5)
+    a[0].metric(t["due"], f"{due:,}")
+    a[1].metric(t["crr"], f"{crr:.1f}%", help=t["crr_h"])
+    a[2].metric(t["rrr"], f"{rrr:.1f}%", help=t["rrr_h"])
+    a[3].metric(t["upsell"], f"{upsell:.1f}%", help=t["upsell_h"])
+    a[4].metric(t["revenue"], _fmt_money(renew_new, st.session_state.get("_lang", "Tiếng Việt")),
+                help=f'{renew_new:,.0f}  •  {t["rev_h"]}')
+    # Hang 2: so luong gia han theo loai
+    b = st.columns(4)
+    b[0].metric(t["early"], f"{ne:,}")
+    b[1].metric(t["ontime"], f"{no:,}")
+    b[2].metric(t["late"], f"{nl:,}")
+    b[3].metric(t["total"], f"{renewed:,}")
 
     g = agg_by_month(df)
     st.plotly_chart(combo_chart(g, t), use_container_width=True, key=f"chart_{key}")
@@ -182,6 +213,7 @@ else:
 
 # Ngon ngu
 lang = st.sidebar.selectbox("🌐 Language / 语言 / Ngôn ngữ", list(LANG.keys()), index=0)
+st.session_state["_lang"] = lang
 t = LANG[lang]
 
 st.title(t["title"])
