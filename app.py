@@ -24,7 +24,9 @@ LANG = {
         "title": "📊 Dashboard Retention / Gia hạn",
         "filters": "Bộ lọc", "language": "Ngôn ngữ",
         "from_month": "Từ tháng", "to_month": "Đến tháng", "team": "Team",
-        "sale_f": "Sale", "advisor_f": "Advisor (GVCN)", "uid_f": "UID (gõ số, cách nhau dấu phẩy)", "all_hint": "Để trống = tất cả",
+        "sale_f": "Sale", "advisor_f": "Advisor (GVCN)", "uid_f": "UID (gõ số, cách nhau dấu phẩy)", "all_hint": "Để trống = tất cả", "all_short": "Tất cả",
+        "tab_group": "📊 Theo nhóm", "by_team": "Theo Team", "by_sale": "Theo Sale", "by_advisor": "Theo Advisor",
+        "metric_pick": "Chỉ số xem", "n_sel": "{n} đã chọn",
         "active_only": "Chỉ khách còn active (loại Expired/On hold)",
         "filtering": "Đang lọc: {a} → {b} | {n} team | {o:,} đơn",
         "tab_all": "🧾 Tổng tất cả đơn hàng", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -47,7 +49,9 @@ LANG = {
         "title": "📊 Retention / Renewal Dashboard",
         "filters": "Filters", "language": "Language",
         "from_month": "From month", "to_month": "To month", "team": "Team",
-        "sale_f": "Sale", "advisor_f": "Advisor", "uid_f": "UID (type number, comma-separated)", "all_hint": "Empty = all",
+        "sale_f": "Sale", "advisor_f": "Advisor", "uid_f": "UID (type number, comma-separated)", "all_hint": "Empty = all", "all_short": "All",
+        "tab_group": "📊 By group", "by_team": "By Team", "by_sale": "By Sale", "by_advisor": "By Advisor",
+        "metric_pick": "Metric", "n_sel": "{n} selected",
         "active_only": "Active only (exclude Expired/On hold)",
         "filtering": "Filter: {a} → {b} | {n} teams | {o:,} orders",
         "tab_all": "🧾 All orders", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -70,7 +74,9 @@ LANG = {
         "title": "📊 续费留存看板",
         "filters": "筛选", "language": "语言",
         "from_month": "起始月", "to_month": "结束月", "team": "团队",
-        "sale_f": "销售", "advisor_f": "班主任", "uid_f": "UID (输入数字，逗号分隔)", "all_hint": "留空 = 全部",
+        "sale_f": "销售", "advisor_f": "班主任", "uid_f": "UID (输入数字，逗号分隔)", "all_hint": "留空 = 全部", "all_short": "全部",
+        "tab_group": "📊 按分组", "by_team": "按团队", "by_sale": "按销售", "by_advisor": "按班主任",
+        "metric_pick": "指标", "n_sel": "已选 {n}",
         "active_only": "仅在读学员（排除到期/暂停）",
         "filtering": "筛选: {a} → {b} | {n} 个团队 | {o:,} 单",
         "tab_all": "🧾 全部订单", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -142,6 +148,69 @@ def combo_chart(g, t):
     fig.update_yaxes(title_text=t["y_conv"], range=[0, 100], secondary_y=True)
     fig.update_xaxes(type="category")
     return fig
+
+
+def breakdown(df, col):
+    """Thong ke theo nhom (col): due (UID het han), renewed, CRR, RRR, Upsell, revenue."""
+    d = df.copy()
+    d["_money"] = pd.to_numeric(d["real_money"], errors="coerce").fillna(0)
+    rev_col = "renewal_payment" if "renewal_payment" in d.columns else "real_money"
+    d["_new"] = pd.to_numeric(d[rev_col], errors="coerce").fillna(0)
+    d = d[d[col].astype(str).str.len() > 0]
+    if d.empty:
+        return pd.DataFrame(columns=["name", "due", "crr", "rrr", "upsell", "revenue"])
+    due = d.groupby(col)["uid"].nunique()
+    stn = lambda v: d[d["status_renew"] == v].groupby(col)["uid"].nunique()
+    renewed = stn("Early Renewal").add(stn("On-time Renewal"), fill_value=0).add(stn("Late Renewal"), fill_value=0)
+    rev = d[d["status_renew"].isin(RENEWAL_REV)]
+    new_val = rev.groupby(col)["_new"].sum()
+    old_val = rev.groupby(col)["_money"].sum()
+    expiring = d.groupby(col)["_money"].sum()
+    o = pd.DataFrame({"due": due})
+    o["renewed"] = renewed.reindex(o.index).fillna(0)
+    o["revenue"] = new_val.reindex(o.index).fillna(0)
+    o["_old"] = old_val.reindex(o.index).fillna(0)
+    o["_exp"] = expiring.reindex(o.index).fillna(0)
+    o["crr"] = (o["renewed"] / o["due"] * 100).round(1)
+    o["rrr"] = (o["revenue"] / o["_exp"].where(o["_exp"] > 0) * 100).round(1).fillna(0)
+    o["upsell"] = (o["revenue"] / o["_old"].where(o["_old"] > 0) * 100).round(1).fillna(0)
+    return o.reset_index().rename(columns={col: "name"})
+
+
+def hbar(bdf, metric, label):
+    lang = st.session_state.get("_lang", "Tiếng Việt")
+    b = bdf.sort_values(metric, ascending=False).head(15).iloc[::-1]
+    if metric == "revenue":
+        txt = [_fmt_money(v, lang) for v in b[metric]]
+    elif metric in ("crr", "rrr", "upsell"):
+        txt = [f"{v:.1f}%" for v in b[metric]]
+    else:
+        txt = [f"{int(v):,}" for v in b[metric]]
+    fig = go.Figure(go.Bar(x=b[metric], y=b["name"].astype(str), orientation="h",
+                           text=txt, textposition="auto", marker_color="#4C78A8"))
+    fig.update_layout(title=label, height=max(320, 26 * len(b) + 90),
+                      margin=dict(t=50, b=20, l=10, r=10))
+    return fig
+
+
+def render_groups(df, t):
+    if df.empty:
+        st.warning(t["no_data"])
+        return
+    labels = {"due": t["due"], "crr": "CRR %", "rrr": "RRR %", "upsell": "Upsell %", "revenue": t["revenue"]}
+    mk = st.radio(t["metric_pick"], list(labels.keys()), format_func=lambda k: labels[k],
+                  horizontal=True, key="grp_metric")
+    cols = st.columns(3)
+    for (col, lab), c in zip([("team", t["by_team"]), ("sale", t["by_sale"]), ("teacher", t["by_advisor"])], cols):
+        with c:
+            b = breakdown(df, col)
+            if b.empty:
+                st.info("—"); continue
+            st.plotly_chart(hbar(b, mk, lab), use_container_width=True, key=f"grp_{col}")
+            with st.expander(lab):
+                sv = b[["name", "due", "crr", "rrr", "upsell", "revenue"]].sort_values("due", ascending=False)
+                sv.columns = [lab, t["due"], "CRR%", "RRR%", "Upsell%", t["revenue"]]
+                st.dataframe(sv, use_container_width=True, hide_index=True)
 
 
 def render_tab(df, key, t):
@@ -241,9 +310,15 @@ sales = sorted([x for x in df_all.get("sale", pd.Series(dtype=str)).dropna().uni
 advisors = sorted([x for x in df_all.get("teacher", pd.Series(dtype=str)).dropna().unique() if x])
 
 # Tat ca multiselect: DE TRONG = TAT CA (khong roi tag)
-sel_teams = st.sidebar.multiselect(t["team"], teams, default=[], placeholder=t["all_hint"])
-sel_sales = st.sidebar.multiselect(t["sale_f"], sales, default=[], placeholder=t["all_hint"])
-sel_adv = st.sidebar.multiselect(t["advisor_f"], advisors, default=[], placeholder=t["all_hint"])
+def _ms_popover(label, options, key):
+    n = len(st.session_state.get(key, []))
+    cap = t["all_short"] if n == 0 else t["n_sel"].format(n=n)
+    with st.sidebar.popover(f"{label}: {cap}", use_container_width=True):
+        return st.multiselect(label, options, default=[], key=key, placeholder=t["all_hint"])
+
+sel_teams = _ms_popover(t["team"], teams, "ms_team")
+sel_sales = _ms_popover(t["sale_f"], sales, "ms_sale")
+sel_adv = _ms_popover(t["advisor_f"], advisors, "ms_adv")
 uid_q = st.sidebar.text_input(t["uid_f"], value="")
 exclude_expired = st.sidebar.checkbox(t["active_only"], value=False)
 
@@ -269,10 +344,12 @@ df_f = df_all[mask].copy()
 
 st.caption(t["filtering"].format(a=m_start, b=m_end, n=(len(sel_teams) or len(teams)), o=len(df_f)))
 
-tab1, tab2 = st.tabs([t["tab_all"], t["tab_od1"]])
+tab1, tab2, tab3 = st.tabs([t["tab_all"], t["tab_od1"], t["tab_group"]])
 with tab1:
     render_tab(df_f, "all", t)
 with tab2:
     od1 = df_f[df_f["vc_order_num"] == 1].copy()
     st.caption(t["tab2_cap"])
     render_tab(od1, "od1", t)
+with tab3:
+    render_groups(df_f, t)
