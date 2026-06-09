@@ -2,6 +2,7 @@
 """Dashboard Retention / Gia han (Streamlit) - doc tu outputs/dashboard_data.csv.
 2 tab (Tong / OD1->OD2), bo loc thang+team, card 1 hang, chon ngon ngu VI/EN/ZH."""
 from pathlib import Path
+import re
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
@@ -23,6 +24,7 @@ LANG = {
         "title": "📊 Dashboard Retention / Gia hạn",
         "filters": "Bộ lọc", "language": "Ngôn ngữ",
         "from_month": "Từ tháng", "to_month": "Đến tháng", "team": "Team",
+        "sale_f": "Sale", "advisor_f": "Advisor (GVCN)", "uid_f": "UID (gõ số, cách nhau dấu phẩy)", "all_hint": "Để trống = tất cả",
         "active_only": "Chỉ khách còn active (loại Expired/On hold)",
         "filtering": "Đang lọc: {a} → {b} | {n} team | {o:,} đơn",
         "tab_all": "🧾 Tổng tất cả đơn hàng", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -45,6 +47,7 @@ LANG = {
         "title": "📊 Retention / Renewal Dashboard",
         "filters": "Filters", "language": "Language",
         "from_month": "From month", "to_month": "To month", "team": "Team",
+        "sale_f": "Sale", "advisor_f": "Advisor", "uid_f": "UID (type number, comma-separated)", "all_hint": "Empty = all",
         "active_only": "Active only (exclude Expired/On hold)",
         "filtering": "Filter: {a} → {b} | {n} teams | {o:,} orders",
         "tab_all": "🧾 All orders", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -67,6 +70,7 @@ LANG = {
         "title": "📊 续费留存看板",
         "filters": "筛选", "language": "语言",
         "from_month": "起始月", "to_month": "结束月", "team": "团队",
+        "sale_f": "销售", "advisor_f": "班主任", "uid_f": "UID (输入数字，逗号分隔)", "all_hint": "留空 = 全部",
         "active_only": "仅在读学员（排除到期/暂停）",
         "filtering": "筛选: {a} → {b} | {n} 个团队 | {o:,} 单",
         "tab_all": "🧾 全部订单", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
@@ -233,7 +237,14 @@ if months:
 else:
     m_start, m_end = None, None
 
-sel_teams = st.sidebar.multiselect(t["team"], teams, default=teams)
+sales = sorted([x for x in df_all.get("sale", pd.Series(dtype=str)).dropna().unique() if x])
+advisors = sorted([x for x in df_all.get("teacher", pd.Series(dtype=str)).dropna().unique() if x])
+
+# Tat ca multiselect: DE TRONG = TAT CA (khong roi tag)
+sel_teams = st.sidebar.multiselect(t["team"], teams, default=[], placeholder=t["all_hint"])
+sel_sales = st.sidebar.multiselect(t["sale_f"], sales, default=[], placeholder=t["all_hint"])
+sel_adv = st.sidebar.multiselect(t["advisor_f"], advisors, default=[], placeholder=t["all_hint"])
+uid_q = st.sidebar.text_input(t["uid_f"], value="")
 exclude_expired = st.sidebar.checkbox(t["active_only"], value=False)
 
 mask = pd.Series(True, index=df_all.index)
@@ -241,11 +252,22 @@ if m_start:
     mask &= df_all["end_month"].between(m_start, m_end)
 if sel_teams:
     mask &= df_all["team"].isin(sel_teams)
+if sel_sales:
+    mask &= df_all["sale"].isin(sel_sales)
+if sel_adv:
+    mask &= df_all["teacher"].isin(sel_adv)
+if uid_q.strip():
+    toks = [x for x in re.split(r"[,\s]+", uid_q.strip()) if x]
+    uids = df_all["uid"].astype(str)
+    m_uid = pd.Series(False, index=df_all.index)
+    for tk in toks:
+        m_uid |= uids.str.contains(tk, regex=False)
+    mask &= m_uid
 if exclude_expired:
     mask &= ~df_all["status"].str.lower().isin(["expired", "on-hold", "on hold"])
 df_f = df_all[mask].copy()
 
-st.caption(t["filtering"].format(a=m_start, b=m_end, n=len(sel_teams), o=len(df_f)))
+st.caption(t["filtering"].format(a=m_start, b=m_end, n=(len(sel_teams) or len(teams)), o=len(df_f)))
 
 tab1, tab2 = st.tabs([t["tab_all"], t["tab_od1"]])
 with tab1:
