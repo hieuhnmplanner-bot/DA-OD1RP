@@ -7,7 +7,7 @@ Chay:  python run_etl.py            (day du, co pace - cham vi doc file 77MB)
 import sys
 import pandas as pd
 import numpy as np
-from config import find_latest_files, OUTPUT_DIR
+from config import find_latest_files, OUTPUT_DIR, DA1RP_SEED
 from etl import ingest, due_date, dims, source as src_mod
 
 NO_PACE = "--no-pace" in sys.argv
@@ -24,6 +24,23 @@ def main():
     # 3-5. Due date + value_chain + status
     orders = due_date.build_orders(rl)
     orders = due_date.recompute_status_renew(orders, revenue)  # renewal tinh ca tu doanh thu
+
+    # [GIONG DA1RP] Neu file seed co cot status_renew -> lay thang cua DA1RP cho cac don khop
+    _seed_status = due_date.load_da1rp_status(str(DA1RP_SEED))
+    if _seed_status:
+        def _nk(x):
+            x = str(x).strip()
+            return x[:-2] if x.endswith(".0") else x
+        _keys = orders["UID"].map(_nk) + "|" + orders["Order ID"].map(_nk)
+        _hit = 0
+        _new = []
+        for k, cur in zip(_keys, orders["status_renew"]):
+            if k in _seed_status:
+                _new.append(_seed_status[k]); _hit += 1
+            else:
+                _new.append(cur)
+        orders["status_renew"] = _new
+        print("  Override status_renew tu DA1RP cho", _hit, "don")
 
     # [GIONG DA1RP] Loai don gia tri thap: end_date >= 2026-02-01 VA gia < 300.000d
     _price = pd.to_numeric(orders["Order Price VND"], errors="coerce").fillna(0)

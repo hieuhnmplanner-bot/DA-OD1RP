@@ -171,3 +171,37 @@ def recompute_status_renew(orders, revenue):
         default=None)
     o.loc[o["Remain_Lesson"].eq(0) & o["status_renew"].isna(), "status_renew"] = "Expired"
     return o.drop(columns=["_next_buy"])
+
+
+def load_da1rp_status(path):
+    """Doc cot status_renew tu export DA1RP remaining_lesson3 (neu co cot thu 5).
+    Tra ve dict key(uid|order_id) -> status_renew. Neu file chi co 4 cot -> {}.
+    Cot ky vong (theo thu tu): uid, order_id, end_date_n, remain_lesson_number, status_renew
+    """
+    import io, os
+    if not os.path.exists(path):
+        return {}
+    raw = open(path, "rb").read()
+    if not raw:
+        return {}
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff") or raw.count(b"\x00") > len(raw) * 0.2:
+        enc = "utf-16"
+    elif raw[:3] == b"\xef\xbb\xbf":
+        enc = "utf-8-sig"
+    else:
+        enc = "utf-8"
+    text = raw.decode(enc, errors="replace").replace("\r\n", "\n").replace("\r", "\n").lstrip("﻿")
+    df = pd.read_csv(io.StringIO(text), dtype=str)
+    low = {c.lower().strip(): c for c in df.columns}
+    has_header = ("uid" in low) and any("order_id" in c or "order id" in c for c in low)
+    if not has_header:
+        df = pd.read_csv(io.StringIO(text), dtype=str, header=None)
+    if df.shape[1] < 5:
+        return {}            # khong co cot status_renew
+    uidc, oidc, stc = df.columns[0], df.columns[1], df.columns[4]
+    out = {}
+    for u, o, s in zip(df[uidc], df[oidc], df[stc]):
+        k = _normkey(u) + "|" + _normkey(o)
+        s = (str(s).strip() if pd.notna(s) else "")
+        out[k] = s if s and s.lower() != "nan" else None
+    return out
