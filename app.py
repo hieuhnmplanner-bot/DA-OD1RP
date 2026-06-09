@@ -27,11 +27,17 @@ if not DATA.exists():
 @st.cache_data(show_spinner=False)
 def load_data(path):
     df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
-    df["vc_order_num"] = pd.to_numeric(df["vc_order_num"], errors="coerce")
-    df["real_money"] = pd.to_numeric(df["real_money"], errors="coerce").fillna(0)
-    df["days_to_renew"] = pd.to_numeric(df["days_to_renew"], errors="coerce")
-    df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
-    df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
+    for col in ["vc_order_num", "real_money", "days_to_renew", "remain_lesson", "order_num"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "real_money" in df.columns:
+        df["real_money"] = df["real_money"].fillna(0)
+    if "renewed" in df.columns:
+        df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
+    else:
+        df["renewed"] = df.get("status_renew", "").isin(["Early Renewal", "On-time Renewal", "Late Renewal"])
+    if "end_date" in df.columns:
+        df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
     for c in ["team", "sale", "teacher", "package", "status", "end_month",
               "next_pay_month", "renew_timing", "value_chain", "status_renew"]:
         if c in df:
