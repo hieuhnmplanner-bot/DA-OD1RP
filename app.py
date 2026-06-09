@@ -65,6 +65,7 @@ def combo_chart(g, title):
                       margin=dict(t=70, b=40, l=10, r=10), hovermode="x unified")
     fig.update_yaxes(title_text="Số khách đến hạn", secondary_y=False)
     fig.update_yaxes(title_text="Tỷ lệ chuyển đổi (%)", range=[0, 100], secondary_y=True)
+    fig.update_xaxes(type="category")  # luon hien nhan thang (vd 2026-06), tranh truc thoi gian loi
     return fig
 
 

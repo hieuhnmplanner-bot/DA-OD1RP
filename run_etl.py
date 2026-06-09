@@ -24,6 +24,12 @@ def main():
     # 3-5. Due date + value_chain + status
     orders = due_date.build_orders(rl)
 
+    # [GIONG DA1RP] Loai don gia tri thap: end_date >= 2026-02-01 VA gia < 300.000d
+    _price = pd.to_numeric(orders["Order Price VND"], errors="coerce").fillna(0)
+    _drop = (orders["end_date_N"] >= pd.Timestamp("2026-02-01")) & (_price < 300000)
+    orders = orders[~_drop].reset_index(drop=True)
+    print(f"  Loai {int(_drop.sum())} don gia tri thap (giong DA1RP)")
+
     # 6. Team (tu dim_sale)
     team_map = dims.load_team_map()
     orders["team"] = dims.map_team(orders["Sale"], team_map)

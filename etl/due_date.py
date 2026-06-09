@@ -62,7 +62,12 @@ def build_orders(rl):
         prev_end[uid] = new_end
     df["end_date_N"] = pd.to_datetime(pd.Series(end_dates, index=df.index))
 
-    # ---- DONG BANG don da het bang state cuc bo (thay snapshot DB) ----
+    # ---- Co On-hold (con buoi nhung nghi >90 ngay): KHONG chieu end_date = hom nay + remain ----
+    _last = pd.to_datetime(df["Last class time"], errors="coerce")
+    _idle = (TODAY - _last).dt.days
+    df["_onhold"] = (df["Remain_Lesson"] > 0) & ((_idle > 90) | (_last.isna()))
+
+    # ---- DONG BANG bang state cuc bo (thay snapshot DB): don da het HOAC On-hold ----
     df = _apply_freeze(df)
 
     # ---- value_chain (reset khi gap > 90 ngay) ----
@@ -110,11 +115,12 @@ def _apply_freeze(df):
         prev_map = dict(zip(prev["key"], prev["end_date_N"]))
         prev_rem = dict(zip(prev["key"], pd.to_numeric(prev["remain"], errors="coerce")))
         frozen = []
-        for k, cur_end, rem in zip(key, df["end_date_N"], df["Remain_Lesson"]):
+        onhold_list = df["_onhold"].tolist() if "_onhold" in df.columns else [False] * len(df)
+        for k, cur_end, rem, oh in zip(key, df["end_date_N"], df["Remain_Lesson"], onhold_list):
             pe = prev_map.get(k)
-            # don da hoc het (remain=0) + co end_date trong snapshot (seed DA1RP hoac lan truoc)
-            # -> giu nguyen end_date do (DONG BANG, giong DA1RP). Don con active -> giu end_date tinh moi.
-            if rem == 0 and pe and str(pe) not in ("", "nan", "NaT"):
+            # Don da het (remain=0) HOAC On-hold (nghi >90 ngay) + co trong snapshot
+            # -> dung end_date da dong bang (giong DA1RP). Chi don dang hoc that moi tinh hom nay + remain.
+            if (rem == 0 or oh) and pe and str(pe) not in ("", "nan", "NaT"):
                 fe = pd.to_datetime(pe, errors="coerce")
                 frozen.append(fe if pd.notna(fe) else cur_end)
             else:
