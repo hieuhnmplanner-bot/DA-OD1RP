@@ -92,6 +92,16 @@ def main():
             "\n   Export remaining_lesson3 (CO header cang tot) voi cac cot theo thu tu:\n   " +
             ", ".join(POS) + "\n   Cot doc duoc: " + ", ".join(map(str, df.columns)))
 
+    # --- Chan doan: giup phat hien export thieu dong / sai cot ---
+    n = len(df)
+    end_ok = pd.to_datetime(df[m["end_date_n"]], errors="coerce").notna().sum()
+    print(f"  [check] {n} dong | {end_ok} dong co end_date hop le ({end_ok*100//max(n,1)}%)")
+    if n < 8000:
+        print(f"  ⚠️  CHI CO {n} dong — co ve export BI THIEU/LOC. remaining_lesson3 thuong > 16000 dong.")
+    if end_ok < n * 0.5:
+        print("  ⚠️  Qua nhieu end_date trong — co the SAI COT (export khong header + sai thu tu). "
+              "Hay export CO HEADER.")
+
     g = lambda k: df[m[k]] if k in m else ""
     out = pd.DataFrame()
     out["uid"] = g("uid").map(lambda x: re.sub(r"\.0$", "", str(x)).strip())
