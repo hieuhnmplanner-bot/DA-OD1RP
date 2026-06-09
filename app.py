@@ -1,174 +1,208 @@
 # -*- coding: utf-8 -*-
-"""
-Dashboard Retention / Gia han  (Streamlit)
-- Tab 1: Tong tat ca don hang (moi vong mua)
-- Tab 2: Rieng OD1 -> OD2 (don dau tien cua value chain)
-- Bo loc theo thang cua end_date (+ team)
-- Chart: so luong khach den han & ty le chuyen doi (gia han) theo thang
-- Bang chi tiet + tai xuong
-
-Chay:  streamlit run app.py
-Du lieu: dashboard_data.csv (tao boi prepare_dashboard_data.py)
-"""
+"""Dashboard Retention / Gia han (Streamlit) - doc tu outputs/dashboard_data.csv.
+2 tab (Tong / OD1->OD2), bo loc thang+team, card 1 hang, chon ngon ngu VI/EN/ZH."""
 from pathlib import Path
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Retention / Gia han Dashboard", layout="wide")
+st.set_page_config(page_title="Retention / Renewal Dashboard", layout="wide")
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "outputs" / "dashboard_data.csv"
 if not DATA.exists():
     DATA = HERE / "dashboard_data.csv"
 
+RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
+RENEWAL_REV = RENEWAL + ["Return after End_date 90 days"]
+
+# ---------------- i18n ----------------
+LANG = {
+    "Tiếng Việt": {
+        "title": "📊 Dashboard Retention / Gia hạn",
+        "filters": "Bộ lọc", "language": "Ngôn ngữ",
+        "from_month": "Từ tháng", "to_month": "Đến tháng", "team": "Team",
+        "active_only": "Chỉ khách còn active (loại Expired/On hold)",
+        "filtering": "Đang lọc: {a} → {b} | {n} team | {o:,} đơn",
+        "tab_all": "🧾 Tổng tất cả đơn hàng", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
+        "tab2_cap": "Chỉ tính Order 1 của mỗi value chain (đơn đầu mỗi chu kỳ). 'Đã gia hạn' = đã mua Order 2 cùng chuỗi.",
+        "due": "Khách đến hạn (UID)", "conv": "Tỷ lệ chuyển đổi", "revenue": "Renewal Revenue",
+        "early": "🟢 Early Renewal", "ontime": "🔵 On-time Renewal", "late": "🟡 Late Renewal",
+        "total": "Σ Tổng đã gia hạn",
+        "chart_title": "Số khách đến hạn & tỷ lệ chuyển đổi theo tháng (end_date)",
+        "leg_due": "Khách đến hạn", "leg_conv": "Tỷ lệ chuyển đổi %",
+        "y_due": "Số khách đến hạn", "y_conv": "Tỷ lệ chuyển đổi (%)",
+        "cap": "Lưu ý: tháng hiện tại / tương lai có tỷ lệ chuyển đổi thấp vì khách chưa kịp gia hạn.",
+        "monthly": "Bảng tổng hợp theo tháng", "detail": "Bảng chi tiết",
+        "download": "⬇️ Tải bảng chi tiết (CSV)", "no_data": "Không có dữ liệu sau khi lọc.",
+    },
+    "English": {
+        "title": "📊 Retention / Renewal Dashboard",
+        "filters": "Filters", "language": "Language",
+        "from_month": "From month", "to_month": "To month", "team": "Team",
+        "active_only": "Active only (exclude Expired/On hold)",
+        "filtering": "Filter: {a} → {b} | {n} teams | {o:,} orders",
+        "tab_all": "🧾 All orders", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
+        "tab2_cap": "Only Order 1 of each value chain. 'Renewed' = bought Order 2 in the same chain.",
+        "due": "Customers Due (UID)", "conv": "Retention rate", "revenue": "Renewal Revenue",
+        "early": "🟢 Early Renewal", "ontime": "🔵 On-time Renewal", "late": "🟡 Late Renewal",
+        "total": "Σ Total Renewed",
+        "chart_title": "Customers due & retention rate by month (end_date)",
+        "leg_due": "Customers due", "leg_conv": "Retention rate %",
+        "y_due": "Customers due", "y_conv": "Retention rate (%)",
+        "cap": "Note: current/future months show low retention because customers haven't renewed yet.",
+        "monthly": "Monthly summary", "detail": "Detail table",
+        "download": "⬇️ Download detail (CSV)", "no_data": "No data after filtering.",
+    },
+    "中文": {
+        "title": "📊 续费留存看板",
+        "filters": "筛选", "language": "语言",
+        "from_month": "起始月", "to_month": "结束月", "team": "团队",
+        "active_only": "仅在读学员（排除到期/暂停）",
+        "filtering": "筛选: {a} → {b} | {n} 个团队 | {o:,} 单",
+        "tab_all": "🧾 全部订单", "tab_od1": "1️⃣➡️2️⃣ OD1 → OD2",
+        "tab2_cap": "仅统计每个学习周期的第 1 单。'已续费' = 同周期购买了第 2 单。",
+        "due": "到期客户数 (UID)", "conv": "续费率", "revenue": "续费金额",
+        "early": "🟢 提前续费", "ontime": "🔵 准时续费", "late": "🟡 延迟续费",
+        "total": "Σ 续费合计",
+        "chart_title": "按月到期客户数与续费率 (end_date)",
+        "leg_due": "到期客户", "leg_conv": "续费率 %",
+        "y_due": "到期客户数", "y_conv": "续费率 (%)",
+        "cap": "注意：当月/未来月份续费率偏低，因为客户尚未续费。",
+        "monthly": "按月汇总表", "detail": "明细表",
+        "download": "⬇️ 下载明细 (CSV)", "no_data": "筛选后无数据。",
+    },
+}
+
 
 @st.cache_data(show_spinner=False)
 def load_data(path):
     df = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
-    for col in ["vc_order_num", "real_money", "days_to_renew", "remain_lesson", "order_num"]:
+    for col in ["vc_order_num", "real_money", "renewal_payment", "remain_lesson", "order_num"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     if "real_money" in df.columns:
         df["real_money"] = df["real_money"].fillna(0)
     if "renewed" in df.columns:
         df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
-    else:
-        df["renewed"] = df.get("status_renew", "").isin(["Early Renewal", "On-time Renewal", "Late Renewal"])
     if "end_date" in df.columns:
         df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
     for c in ["team", "sale", "teacher", "package", "status", "end_month",
-              "next_pay_month", "renew_timing", "value_chain", "status_renew"]:
+              "status_renew", "value_chain"]:
         if c in df:
             df[c] = df[c].fillna("")
     return df
 
 
-RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
-
-
 def agg_by_month(df):
-    # Gom theo end_month (chuoi) - CUNG co so voi card + bo loc, khong phu thuoc parse end_date
     _em = df["end_month"].astype(str)
     base = df[_em.str.len().eq(7) & _em.str.contains("-", regex=False)]
     due = base.groupby("end_month")["uid"].nunique()
     ren = base[base["status_renew"].isin(RENEWAL)].groupby("end_month")["uid"].nunique()
-    g = pd.DataFrame({"khach_den_han": due, "da_gia_han": ren}).fillna(0).astype(int).reset_index()
-    g["ty_le_chuyen_doi_%"] = (g["da_gia_han"] / g["khach_den_han"] * 100).round(1).fillna(0)
+    g = pd.DataFrame({"due": due, "ren": ren}).fillna(0).astype(int).reset_index()
+    g["conv"] = (g["ren"] / g["due"] * 100).round(1).fillna(0)
     return g.sort_values("end_month")
 
 
-def combo_chart(g, title):
+def combo_chart(g, t):
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(x=g["end_month"], y=g["khach_den_han"],
-                         name="Khách đến hạn", marker_color="#4C78A8"),
+    fig.add_trace(go.Bar(x=g["end_month"], y=g["due"], name=t["leg_due"], marker_color="#4C78A8"),
                   secondary_y=False)
-    fig.add_trace(go.Scatter(x=g["end_month"], y=g["ty_le_chuyen_doi_%"],
-                             name="Tỷ lệ chuyển đổi %", mode="lines+markers",
-                             line=dict(color="#E45756", width=3)),
+    fig.add_trace(go.Scatter(x=g["end_month"], y=g["conv"], name=t["leg_conv"],
+                             mode="lines+markers", line=dict(color="#E45756", width=3)),
                   secondary_y=True)
-    fig.update_layout(title=title, height=430, legend=dict(orientation="h", y=1.12),
+    fig.update_layout(title=t["chart_title"], height=430, legend=dict(orientation="h", y=1.12),
                       margin=dict(t=70, b=40, l=10, r=10), hovermode="x unified")
-    fig.update_yaxes(title_text="Số khách đến hạn", secondary_y=False)
-    fig.update_yaxes(title_text="Tỷ lệ chuyển đổi (%)", range=[0, 100], secondary_y=True)
-    fig.update_xaxes(type="category")  # luon hien nhan thang (vd 2026-06), tranh truc thoi gian loi
+    fig.update_yaxes(title_text=t["y_due"], secondary_y=False)
+    fig.update_yaxes(title_text=t["y_conv"], range=[0, 100], secondary_y=True)
+    fig.update_xaxes(type="category")
     return fig
 
 
-def render_tab(df, key):
+def render_tab(df, key, t):
     if df.empty:
-        st.warning("Không có dữ liệu sau khi lọc.")
+        st.warning(t["no_data"])
         return
-    g = agg_by_month(df)
-    # DEM THEO UNIQUE UID (giong DA1RP)
-    tot_due = int(df["uid"].nunique())
-    tot_orders = int(len(df))
     sr = df["status_renew"] if "status_renew" in df.columns else pd.Series([], dtype=str)
-    n_early = int(df.loc[sr == "Early Renewal", "uid"].nunique())
-    n_ontime = int(df.loc[sr == "On-time Renewal", "uid"].nunique())
-    n_late = int(df.loc[sr == "Late Renewal", "uid"].nunique())
-    renewed = n_early + n_ontime + n_late
-    conv = (renewed / tot_due * 100) if tot_due else 0
+    due = int(df["uid"].nunique())
+    ne = int(df.loc[sr == "Early Renewal", "uid"].nunique())
+    no = int(df.loc[sr == "On-time Renewal", "uid"].nunique())
+    nl = int(df.loc[sr == "Late Renewal", "uid"].nunique())
+    renewed = ne + no + nl
+    conv = (renewed / due * 100) if due else 0
     rev_col = "renewal_payment" if "renewal_payment" in df.columns else "real_money"
-    rev_status = RENEWAL + ["Return after End_date 90 days"]
-    renewal_rev = pd.to_numeric(df.loc[sr.isin(rev_status), rev_col], errors="coerce").sum()
+    rev = pd.to_numeric(df.loc[sr.isin(RENEWAL_REV), rev_col], errors="coerce").sum()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Khách đến hạn (UID)", f"{tot_due:,}")
-    c2.metric("Số đơn đến hạn", f"{tot_orders:,}")
-    c3.metric("Đã gia hạn (UID)", f"{renewed:,}")
-    c4.metric("Tỷ lệ chuyển đổi", f"{conv:.1f}%")
-    c5.metric("Renewal Revenue", f"{renewal_rev:,.0f}")
+    # TAT CA CARD TREN 1 HANG
+    c = st.columns(7)
+    c[0].metric(t["due"], f"{due:,}")
+    c[1].metric(t["early"], f"{ne:,}")
+    c[2].metric(t["ontime"], f"{no:,}")
+    c[3].metric(t["late"], f"{nl:,}")
+    c[4].metric(t["total"], f"{renewed:,}")
+    c[5].metric(t["conv"], f"{conv:.1f}%")
+    c[6].metric(t["revenue"], f"{rev:,.0f}")
 
-    r1, r2, r3, r4 = st.columns(4)
-    r1.metric("🟢 Early Renewal", f"{n_early:,}")
-    r2.metric("🔵 On-time Renewal", f"{n_ontime:,}")
-    r3.metric("🟡 Late Renewal", f"{n_late:,}")
-    r4.metric("Σ Tổng đã gia hạn", f"{renewed:,}")
+    g = agg_by_month(df)
+    st.plotly_chart(combo_chart(g, t), use_container_width=True, key=f"chart_{key}")
+    st.caption(t["cap"])
 
-    st.plotly_chart(combo_chart(g, "Số khách đến hạn & tỷ lệ chuyển đổi theo tháng (end_date)"),
-                    use_container_width=True, key=f"chart_{key}")
+    with st.expander(t["monthly"], expanded=False):
+        gv = g.rename(columns={"end_month": "month", "due": t["leg_due"],
+                               "ren": t["total"], "conv": t["leg_conv"]})
+        st.dataframe(gv, use_container_width=True, hide_index=True)
 
-    st.caption("Lưu ý: tháng hiện tại / tương lai có tỷ lệ chuyển đổi thấp vì khách chưa kịp gia hạn.")
-
-    with st.expander("Bảng tổng hợp theo tháng", expanded=False):
-        st.dataframe(g, use_container_width=True, hide_index=True)
-
-    st.subheader("Bảng chi tiết")
-    # Hien thi cot giong file DA1RP
-    colmap = [
-        ("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
-        ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
-        ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
-        ("end_date", "end_date_N"), ("order_num", "order_num"),
-    ]
-    cols = [(src, dst) for src, dst in colmap if src in df.columns]
-    detail = df[[c for c, _ in cols]].rename(columns=dict(cols))
+    st.subheader(t["detail"])
+    colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
+              ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
+              ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
+              ("end_date", "end_date_N"), ("order_num", "order_num")]
+    cols = [(s, d) for s, d in colmap if s in df.columns]
+    detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
     for dc in ("Purchase Time", "end_date_N"):
         if dc in detail.columns:
             detail[dc] = pd.to_datetime(detail[dc], errors="coerce").dt.strftime("%Y-%m-%d")
-    sort_cols = [c for c in ["Sale Team", "UID"] if c in detail.columns]
+    sort_cols = [x for x in ["Sale Team", "UID"] if x in detail.columns]
     if sort_cols:
         detail = detail.sort_values(sort_cols)
     st.dataframe(detail, use_container_width=True, hide_index=True)
-    st.download_button("⬇️ Tải bảng chi tiết (CSV)",
-                       detail.to_csv(index=False).encode("utf-8-sig"),
-                       file_name=f"chi_tiet_{key}.csv", mime="text/csv",
-                       key=f"dl_{key}")
+    st.download_button(t["download"], detail.to_csv(index=False).encode("utf-8-sig"),
+                       file_name=f"detail_{key}.csv", mime="text/csv", key=f"dl_{key}")
 
 
 # ---------------- Load ----------------
-st.title("📊 Dashboard Retention / Gia hạn")
-
 if not DATA.exists():
-    up = st.file_uploader("Chưa thấy dashboard_data.csv — tải lên file dữ liệu", type=["csv"])
+    up = st.file_uploader("dashboard_data.csv?", type=["csv"])
     if up is None:
         st.stop()
     df_all = load_data(up)
 else:
     df_all = load_data(DATA)
 
-# ---------------- Filters ----------------
-months = sorted([m for m in df_all["end_month"].dropna().unique() if m])
-teams = sorted([t for t in df_all["team"].dropna().unique() if t])
+# Ngon ngu
+lang = st.sidebar.selectbox("🌐 Language / 语言 / Ngôn ngữ", list(LANG.keys()), index=0)
+t = LANG[lang]
 
-st.sidebar.header("Bộ lọc")
+st.title(t["title"])
+st.sidebar.header(t["filters"])
+
+months = sorted([m for m in df_all["end_month"].dropna().unique() if m and len(str(m)) == 7])
+teams = sorted([x for x in df_all["team"].dropna().unique() if x])
+
 if months:
-    # mac dinh: cua so quanh thang hien tai
-    now = pd.Timestamp.now().strftime("%Y-%m")
-    default_start = next((m for m in months if m >= (pd.Timestamp.now() - pd.DateOffset(months=6)).strftime("%Y-%m")), months[0])
-    default_end = next((m for m in reversed(months) if m <= (pd.Timestamp.now() + pd.DateOffset(months=6)).strftime("%Y-%m")), months[-1])
+    ds = next((m for m in months if m >= (pd.Timestamp.now() - pd.DateOffset(months=6)).strftime("%Y-%m")), months[0])
+    de = next((m for m in reversed(months) if m <= (pd.Timestamp.now() + pd.DateOffset(months=6)).strftime("%Y-%m")), months[-1])
     cfa, cfb = st.sidebar.columns(2)
-    m_start = cfa.selectbox("Từ tháng", months, index=months.index(default_start))
-    m_end = cfb.selectbox("Đến tháng", months, index=months.index(default_end))
+    m_start = cfa.selectbox(t["from_month"], months, index=months.index(ds))
+    m_end = cfb.selectbox(t["to_month"], months, index=months.index(de))
     if m_start > m_end:
         m_start, m_end = m_end, m_start
 else:
     m_start, m_end = None, None
 
-sel_teams = st.sidebar.multiselect("Team", teams, default=teams)
-exclude_expired = st.sidebar.checkbox("Chỉ khách còn active (loại Expired/On hold)", value=False)
+sel_teams = st.sidebar.multiselect(t["team"], teams, default=teams)
+exclude_expired = st.sidebar.checkbox(t["active_only"], value=False)
 
 mask = pd.Series(True, index=df_all.index)
 if m_start:
@@ -179,12 +213,12 @@ if exclude_expired:
     mask &= ~df_all["status"].str.lower().isin(["expired", "on-hold", "on hold"])
 df_f = df_all[mask].copy()
 
-st.caption(f"Đang lọc: {m_start} → {m_end} | {len(sel_teams)} team | {len(df_f):,} đơn")
+st.caption(t["filtering"].format(a=m_start, b=m_end, n=len(sel_teams), o=len(df_f)))
 
-tab1, tab2 = st.tabs(["🧾 Tổng tất cả đơn hàng", "1️⃣➡️2️⃣ OD1 → OD2"])
+tab1, tab2 = st.tabs([t["tab_all"], t["tab_od1"]])
 with tab1:
-    render_tab(df_f, "all")
+    render_tab(df_f, "all", t)
 with tab2:
     od1 = df_f[df_f["vc_order_num"] == 1].copy()
-    st.caption("Chỉ tính Order 1 của mỗi value chain (đơn đầu mỗi chu kỳ học). 'Đã gia hạn' = đã mua Order 2 cùng chuỗi.")
-    render_tab(od1, "od1")
+    st.caption(t["tab2_cap"])
+    render_tab(od1, "od1", t)
