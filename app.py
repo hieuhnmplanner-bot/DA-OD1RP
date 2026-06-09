@@ -49,7 +49,9 @@ RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
 
 
 def agg_by_month(df):
-    base = df.dropna(subset=["end_date"])
+    # Gom theo end_month (chuoi) - CUNG co so voi card + bo loc, khong phu thuoc parse end_date
+    _em = df["end_month"].astype(str)
+    base = df[_em.str.len().eq(7) & _em.str.contains("-", regex=False)]
     due = base.groupby("end_month")["uid"].nunique()
     ren = base[base["status_renew"].isin(RENEWAL)].groupby("end_month")["uid"].nunique()
     g = pd.DataFrame({"khach_den_han": due, "da_gia_han": ren}).fillna(0).astype(int).reset_index()
