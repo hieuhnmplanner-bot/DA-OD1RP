@@ -45,17 +45,16 @@ def load_data(path):
     return df
 
 
+RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
+
+
 def agg_by_month(df):
-    g = (df.dropna(subset=["end_date"])
-           .groupby("end_month")
-           .agg(khach_den_han=("uid", "nunique"),
-                so_don=("uid", "size"),
-                da_gia_han=("renewed", "sum"),
-                doanh_thu=("real_money", "sum"))
-           .reset_index()
-           .sort_values("end_month"))
-    g["ty_le_chuyen_doi_%"] = (g["da_gia_han"] / g["so_don"] * 100).round(1).fillna(0)
-    return g
+    base = df.dropna(subset=["end_date"])
+    due = base.groupby("end_month")["uid"].nunique()
+    ren = base[base["status_renew"].isin(RENEWAL)].groupby("end_month")["uid"].nunique()
+    g = pd.DataFrame({"khach_den_han": due, "da_gia_han": ren}).fillna(0).astype(int).reset_index()
+    g["ty_le_chuyen_doi_%"] = (g["da_gia_han"] / g["khach_den_han"] * 100).round(1).fillna(0)
+    return g.sort_values("end_month")
 
 
 def combo_chart(g, title):
@@ -80,26 +79,30 @@ def render_tab(df, key):
         st.warning("Không có dữ liệu sau khi lọc.")
         return
     g = agg_by_month(df)
-    c1, c2, c3, c4 = st.columns(4)
+    # DEM THEO UNIQUE UID (giong DA1RP)
     tot_due = int(df["uid"].nunique())
     tot_orders = int(len(df))
-    tot_renew = int(df["renewed"].sum())
-    conv = (tot_renew / tot_orders * 100) if tot_orders else 0
-    c1.metric("Khách đến hạn (unique UID)", f"{tot_due:,}")
-    c2.metric("Số đơn đến hạn", f"{tot_orders:,}")
-    c3.metric("Đã gia hạn", f"{tot_renew:,}")
-    c4.metric("Tỷ lệ chuyển đổi", f"{conv:.1f}%")
-
-    # Breakdown gia han theo loai (de check nhanh voi DA1RP)
     sr = df["status_renew"] if "status_renew" in df.columns else pd.Series([], dtype=str)
-    n_early = int((sr == "Early Renewal").sum())
-    n_ontime = int((sr == "On-time Renewal").sum())
-    n_late = int((sr == "Late Renewal").sum())
+    n_early = int(df.loc[sr == "Early Renewal", "uid"].nunique())
+    n_ontime = int(df.loc[sr == "On-time Renewal", "uid"].nunique())
+    n_late = int(df.loc[sr == "Late Renewal", "uid"].nunique())
+    renewed = n_early + n_ontime + n_late
+    conv = (renewed / tot_due * 100) if tot_due else 0
+    rev_col = "renewal_payment" if "renewal_payment" in df.columns else "real_money"
+    renewal_rev = pd.to_numeric(df.loc[sr.isin(RENEWAL), rev_col], errors="coerce").sum()
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Khách đến hạn (UID)", f"{tot_due:,}")
+    c2.metric("Số đơn đến hạn", f"{tot_orders:,}")
+    c3.metric("Đã gia hạn (UID)", f"{renewed:,}")
+    c4.metric("Tỷ lệ chuyển đổi", f"{conv:.1f}%")
+    c5.metric("Renewal Revenue", f"{renewal_rev:,.0f}")
+
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("🟢 Early Renewal", f"{n_early:,}")
     r2.metric("🔵 On-time Renewal", f"{n_ontime:,}")
     r3.metric("🟡 Late Renewal", f"{n_late:,}")
-    r4.metric("Σ Tổng đã gia hạn", f"{n_early + n_ontime + n_late:,}")
+    r4.metric("Σ Tổng đã gia hạn", f"{renewed:,}")
 
     st.plotly_chart(combo_chart(g, "Số khách đến hạn & tỷ lệ chuyển đổi theo tháng (end_date)"),
                     use_container_width=True, key=f"chart_{key}")

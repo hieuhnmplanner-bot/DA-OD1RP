@@ -9,7 +9,7 @@ số liệu **giống DA1RP 100%**. Không đụng DB của DA1RP (chỉ đọc 
    ```sql
    SELECT uid, order_id, end_date_n, remain_lesson_number, status_renew,
           teacher, sale, depart7_name_sale, order_price_vnd, purchase_time,
-          order_num, type_lesson, type_sale, package_name
+          order_num, type_lesson, payment_number_n_1
    FROM remaining_lesson3
    ```
    Lưu (ghi đè) thành `da1rp_remaining_lesson3.csv` trong thư mục này.

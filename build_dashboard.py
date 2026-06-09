@@ -38,6 +38,7 @@ ALIASES = {
     "status": ["type_lesson", "status"],
     "source_type": ["type_sale", "source_name", "source_type"],
     "package": ["package_name", "package"],
+    "renewal_payment": ["payment_number_n_1", "payment_number_n1", "renewal_payment", "payment_n_1"],
 }
 
 
@@ -73,7 +74,7 @@ def main():
     # thu tu cot khi export KHONG co header (dung dung thu tu nay trong cau SQL)
     POS = ["uid", "order_id", "end_date_n", "remain_lesson_number", "status_renew",
            "teacher", "sale", "depart7_name_sale", "order_price_vnd", "purchase_time",
-           "order_num", "type_lesson", "type_sale", "package_name"]
+           "order_num", "type_lesson", "payment_number_n_1"]
     need = ["uid", "order_id", "end_date_n", "status_renew", "team"]
     text = _decode(str(DA1RP_SEED))
     df = pd.read_csv(io.StringIO(text), dtype=str)
@@ -120,6 +121,7 @@ def main():
     out["status"] = g("status").fillna("") if "status" in m else ""
     out["status_renew"] = g("status_renew").where(g("status_renew").notna(), "")
     out["source_type"] = g("source_type").fillna("") if "source_type" in m else ""
+    out["renewal_payment"] = pd.to_numeric(g("renewal_payment"), errors="coerce").fillna(0) if "renewal_payment" in m else 0
 
     # ---- TINH THEM value_chain / vc_order_num (reset khi nghi > 90 ngay) ----
     out = out.sort_values(["uid", "purchase_time", "order_num"]).reset_index(drop=True)
