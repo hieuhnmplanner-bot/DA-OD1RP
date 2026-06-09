@@ -43,10 +43,12 @@ def main():
     if not NO_PACE and lat.get("complete_homework_data"):
         try:
             from etl import pace
-            pdf = pace.compute_pace(lat["complete_homework_data"])
-            orders = orders.merge(pdf, on="UID", how="left")
-            print(f"  pace: gan cho {orders['lessons_per_week_real'].notna().sum()} don")
+            pdf = pace.compute_pace(lat["complete_homework_data"])[["UID", "lessons_per_week_real"]]
+            orders = orders.drop(columns=["lessons_per_week_real"]).merge(pdf, on="UID", how="left")
+            print("  pace: gan cho", int(orders["lessons_per_week_real"].notna().sum()), "don")
         except Exception as e:
+            if "lessons_per_week_real" not in orders.columns:
+                orders["lessons_per_week_real"] = np.nan
             print("  pace bo qua (loi/cham):", e)
 
     # 9. Chuan hoa ve schema dashboard
@@ -70,6 +72,8 @@ def main():
     out["order_num"] = pd.to_numeric(orders["order_num"], errors="coerce")
     out["purchase_time"] = pd.to_datetime(orders["payment_N"], errors="coerce")
     out["source_type"] = orders.get("source_type", "Other")
+    if "lessons_per_week_real" not in orders.columns:
+        orders["lessons_per_week_real"] = np.nan
     out["lessons_per_week_real"] = orders["lessons_per_week_real"]
 
     # renewed = da gia han theo DA1RP: status_renew thuoc {Early, On-time, Late}
