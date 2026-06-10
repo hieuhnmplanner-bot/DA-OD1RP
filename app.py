@@ -261,7 +261,8 @@ def render_tab(df, key, t):
     colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
               ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
               ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
-              ("end_date", "end_date_N"), ("order_num", "order_num")]
+              ("end_date", "end_date_N"), ("order_num", "order_num"),
+              ("value_chain", "value_chain"), ("vc_order_num", "value_chain_order_num")]
     cols = [(s, d) for s, d in colmap if s in df.columns]
     detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
     for dc in ("Purchase Time", "end_date_N"):

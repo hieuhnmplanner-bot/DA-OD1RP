@@ -31,7 +31,7 @@ ALIASES = {
     "status_renew": ["status_renew", "status renewal", "statusrenewal"],
     "teacher": ["teacher", "advisor", "ten_gvcn"],
     "sale": ["sale"],
-    "team": ["depart7_name_sale", "sale_team", "team"],
+    "team": ["depart7_name_sale", "sale_team", "sale team", "saleteam", "team"],
     "real_money": ["order_price_vnd", "gmv_latest", "gmv latest", "gmv"],
     "purchase_time": ["purchase_time", "payment_n", "purchase time"],
     "order_num": ["order_num", "order_number", "ordernum"],
@@ -133,6 +133,16 @@ def main():
     out["vc_order_num"] = out.groupby([out["uid"], idx]).cumcount() + 1
 
     out["renewed"] = out["status_renew"].isin(RENEWAL)
+
+    # CHOT CHAN: neu qua nhieu end_date rong -> sai cot (export headerless sai thu tu)
+    _valid = float(out["end_date"].notna().mean())
+    if _valid < 0.5:
+        raise SystemExit(
+            f"❌ Chi {_valid*100:.0f}% dong co end_date hop le -> NHIEU KHA NANG SAI COT.\n"
+            "   Nguyen nhan: file export KHONG co header va thu tu cot khac voi ky vong,\n"
+            "   nen end_date bi doc nham tu cot khac.\n"
+            "   CACH SUA: export remaining_lesson3 CO HEADER (bat 'Include column headers' trong SSMS).\n"
+            "   Khi co header, build map theo TEN cot -> khong bao gio lech. File HONG nay KHONG duoc ghi.")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     dash = OUTPUT_DIR / "dashboard_data.csv"
