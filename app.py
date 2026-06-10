@@ -117,7 +117,7 @@ def load_data(path):
     if "renewed" in df.columns:
         df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
     if "end_date" in df.columns:
-        df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce")
+        df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce", format="mixed")
     for c in ["team", "sale", "teacher", "package", "status", "end_month",
               "status_renew", "value_chain"]:
         if c in df:
@@ -267,7 +267,7 @@ def render_tab(df, key, t):
     detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
     for dc in ("Purchase Time", "end_date_N"):
         if dc in detail.columns:
-            detail[dc] = pd.to_datetime(detail[dc], errors="coerce").dt.strftime("%Y-%m-%d")
+            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%Y-%m-%d")
     sort_cols = [x for x in ["Sale Team", "UID"] if x in detail.columns]
     if sort_cols:
         detail = detail.sort_values(sort_cols)
