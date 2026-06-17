@@ -294,8 +294,9 @@ def render_tab(df, key, t):
     # Don gia han CHUA kich hoat: hien "Not activated" o cot Status Renewal (type_lesson da gan o DA1RP)
     df = df.copy()
     if "status" in df.columns:
-        _na = df["status"].astype(str).str.strip().str.lower() == "not activated"
-        df.loc[_na, "status_renew"] = "Not activated"
+        _st = df["status"].astype(str).str.strip().str.lower()
+        df.loc[_st == "not activated", "status_renew"] = "Not activated"
+        df.loc[_st == "dropped out", "status_renew"] = "Dropped out"
     # Last study time (buoi hoc cuoi) + so ngay khong hoc = hom nay - buoi hoc cuoi
     if "last_class" in df.columns:
         df["last_class"] = pd.to_datetime(df["last_class"], errors="coerce", format="mixed")
