@@ -16,7 +16,8 @@ if not DATA.exists():
     DATA = HERE / "dashboard_data.csv"
 
 RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
-RENEWAL_REV = RENEWAL + ["Return after End_date 90 days"]
+# "Return after End_date 90 days" = chu ky moi -> KHONG tinh gia han o BAT KY chi so nao
+# (CRR, RRR, Upsell, Renewal Revenue deu chi dung RENEWAL: Early/On-time/Late)
 
 # ---------------- i18n ----------------
 LANG = {
@@ -175,7 +176,7 @@ def breakdown(df, col):
     due = d.groupby(col)["uid"].nunique()
     stn = lambda v: d[d["status_renew"] == v].groupby(col)["uid"].nunique()
     renewed = stn("Early Renewal").add(stn("On-time Renewal"), fill_value=0).add(stn("Late Renewal"), fill_value=0)
-    rev = d[d["status_renew"].isin(RENEWAL_REV)]
+    rev = d[d["status_renew"].isin(RENEWAL)]
     new_val = rev.groupby(col)["_new"].sum()
     old_val = rev.groupby(col)["_money"].sum()
     expiring = d.groupby(col)["_money"].sum()
@@ -249,7 +250,7 @@ def render_tab(df, key, t):
     renewed = ne + no + nl
     crr = (renewed / due * 100) if due else 0
     rev_col = "renewal_payment" if "renewal_payment" in df.columns else "real_money"
-    ren_mask = sr.isin(RENEWAL_REV)
+    ren_mask = sr.isin(RENEWAL)
     money = pd.to_numeric(df["real_money"], errors="coerce").fillna(0)
     renew_new = pd.to_numeric(df.loc[ren_mask, rev_col], errors="coerce").fillna(0).sum()   # don gia han moi
     renew_old = money[ren_mask].sum()                                                       # don cu cua nhom gia han
@@ -286,6 +287,11 @@ def render_tab(df, key, t):
     render_breakdown_tables(df, t)
 
     st.subheader(t["detail"])
+    # Don gia han CHUA kich hoat: hien "Not activated" o cot Status Renewal (type_lesson da gan o DA1RP)
+    df = df.copy()
+    if "status" in df.columns:
+        _na = df["status"].astype(str).str.strip().str.lower() == "not activated"
+        df.loc[_na, "status_renew"] = "Not activated"
     colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
               ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
               ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
