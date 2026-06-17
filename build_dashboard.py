@@ -95,7 +95,7 @@ def main():
 
     # --- Chan doan: giup phat hien export thieu dong / sai cot ---
     n = len(df)
-    end_ok = pd.to_datetime(df[m["end_date_n"]], errors="coerce").notna().sum()
+    end_ok = pd.to_datetime(df[m["end_date_n"]], errors="coerce", format="mixed").notna().sum()
     print(f"  [check] {n} dong | {end_ok} dong co end_date hop le ({end_ok*100//max(n,1)}%)")
     if n < 8000:
         print(f"  ⚠️  CHI CO {n} dong — co ve export BI THIEU/LOC. remaining_lesson3 thuong > 16000 dong.")
@@ -111,8 +111,8 @@ def main():
     out["teacher"] = g("teacher").fillna("") if "teacher" in m else ""
     out["package"] = g("package").fillna("") if "package" in m else ""
     out["order_id"] = g("order_id").astype(str)
-    out["end_date"] = pd.to_datetime(g("end_date_n"), errors="coerce")
-    out["purchase_time"] = pd.to_datetime(g("purchase_time"), errors="coerce") if "purchase_time" in m else pd.NaT
+    out["end_date"] = pd.to_datetime(g("end_date_n"), errors="coerce", format="mixed")
+    out["purchase_time"] = pd.to_datetime(g("purchase_time"), errors="coerce", format="mixed") if "purchase_time" in m else pd.NaT
     out["end_month"] = out["end_date"].dt.strftime("%Y-%m")
     out["pay_month"] = out["purchase_time"].dt.strftime("%Y-%m")
     out["real_money"] = pd.to_numeric(g("real_money"), errors="coerce").fillna(0) if "real_money" in m else 0
@@ -131,6 +131,12 @@ def main():
     idx = new_chain.groupby(out["uid"]).cumsum().astype(int)
     out["value_chain"] = "VC-" + idx.map(lambda x: f"{int(x):02d}")
     out["vc_order_num"] = out.groupby([out["uid"], idx]).cumcount() + 1
+
+    # ---- Don N+1 (gia han ke tiep trong CUNG value_chain) ----
+    # renew_date_n1 = ngay mua (purchase_time) cua don ke tiep cung chuoi
+    # renewed_next  = order nay DA co don gia han tiep (cung chuoi) hay chua
+    out["renew_date_n1"] = out.groupby([out["uid"], idx])["purchase_time"].shift(-1)
+    out["renewed_next"] = out["renew_date_n1"].notna()
 
     out["renewed"] = out["status_renew"].isin(RENEWAL)
 

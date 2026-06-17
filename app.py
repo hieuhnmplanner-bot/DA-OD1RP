@@ -130,8 +130,12 @@ def load_data(path):
         df["real_money"] = df["real_money"].fillna(0)
     if "renewed" in df.columns:
         df["renewed"] = df["renewed"].astype(str).str.lower().isin(["true", "1", "yes"])
+    if "renewed_next" in df.columns:
+        df["renewed_next"] = df["renewed_next"].astype(str).str.lower().isin(["true", "1", "yes"])
     if "end_date" in df.columns:
         df["end_date"] = pd.to_datetime(df["end_date"], errors="coerce", format="mixed")
+    if "renew_date_n1" in df.columns:
+        df["renew_date_n1"] = pd.to_datetime(df["renew_date_n1"], errors="coerce", format="mixed")
     for c in ["team", "sale", "teacher", "package", "status", "end_month",
               "status_renew", "value_chain"]:
         if c in df:
@@ -292,16 +296,20 @@ def render_tab(df, key, t):
     if "status" in df.columns:
         _na = df["status"].astype(str).str.strip().str.lower() == "not activated"
         df.loc[_na, "status_renew"] = "Not activated"
-    colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("remain_lesson", "Remain lesson"),
-              ("real_money", "GMV latest"), ("teacher", "Advisor"), ("sale", "Sale"),
-              ("team", "Sale Team"), ("purchase_time", "Purchase Time"),
-              ("end_date", "end_date_N"), ("order_num", "order_num"),
-              ("value_chain", "value_chain"), ("vc_order_num", "value_chain_order_num")]
+    colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("order_id", "Order ID"),
+              ("remain_lesson", "Remain lesson"), ("real_money", "GMV latest"),
+              ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
+              ("purchase_time", "Purchase Time"), ("end_date", "end_date_N"),
+              ("renewed_next", "Đã gia hạn"), ("renew_date_n1", "Ngày gia hạn (N+1)"),
+              ("order_num", "order_num"), ("value_chain", "value_chain"),
+              ("vc_order_num", "value_chain_order_num")]
     cols = [(s, d) for s, d in colmap if s in df.columns]
     detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
-    for dc in ("Purchase Time", "end_date_N"):
+    if "Đã gia hạn" in detail.columns:
+        detail["Đã gia hạn"] = detail["Đã gia hạn"].map({True: "Rồi", False: "Chưa"}).fillna("Chưa")
+    for dc in ("Purchase Time", "end_date_N", "Ngày gia hạn (N+1)"):
         if dc in detail.columns:
-            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%Y-%m-%d")
+            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%Y-%m-%d").fillna("")
     sort_cols = [x for x in ["Sale Team", "UID"] if x in detail.columns]
     if sort_cols:
         detail = detail.sort_values(sort_cols)
