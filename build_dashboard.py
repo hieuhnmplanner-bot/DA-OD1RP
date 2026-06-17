@@ -39,6 +39,7 @@ ALIASES = {
     "source_type": ["type_sale", "source_name", "source_type"],
     "package": ["package_name", "package"],
     "renewal_payment": ["payment_number_n_1", "payment_number_n1", "renewal_payment", "payment_n_1"],
+    "last_class": ["last_class_time", "last class time", "last_class", "last_study_time", "last study time"],
 }
 
 
@@ -113,6 +114,7 @@ def main():
     out["order_id"] = g("order_id").astype(str)
     out["end_date"] = pd.to_datetime(g("end_date_n"), errors="coerce", format="mixed")
     out["purchase_time"] = pd.to_datetime(g("purchase_time"), errors="coerce", format="mixed") if "purchase_time" in m else pd.NaT
+    out["last_class"] = pd.to_datetime(g("last_class"), errors="coerce", format="mixed") if "last_class" in m else pd.NaT
     out["end_month"] = out["end_date"].dt.strftime("%Y-%m")
     out["pay_month"] = out["purchase_time"].dt.strftime("%Y-%m")
     out["real_money"] = pd.to_numeric(g("real_money"), errors="coerce").fillna(0) if "real_money" in m else 0

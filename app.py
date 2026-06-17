@@ -296,8 +296,13 @@ def render_tab(df, key, t):
     if "status" in df.columns:
         _na = df["status"].astype(str).str.strip().str.lower() == "not activated"
         df.loc[_na, "status_renew"] = "Not activated"
+    # Last study time (buoi hoc cuoi) + so ngay khong hoc = hom nay - buoi hoc cuoi
+    if "last_class" in df.columns:
+        df["last_class"] = pd.to_datetime(df["last_class"], errors="coerce", format="mixed")
+        df["days_idle"] = (pd.Timestamp.now().normalize() - df["last_class"].dt.normalize()).dt.days
     colmap = [("uid", "UID"), ("status_renew", "Status Renewal"), ("order_id", "Order ID"),
-              ("remain_lesson", "Remain lesson"), ("real_money", "GMV latest"),
+              ("remain_lesson", "Remain lesson"), ("last_class", "Last study time"),
+              ("days_idle", "Số ngày không học"), ("real_money", "GMV latest"),
               ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
               ("purchase_time", "Purchase Time"), ("end_date", "end_date_N"),
               ("renewed_next", "Đã gia hạn"), ("renew_date_n1", "Ngày gia hạn (N+1)"),
@@ -307,9 +312,11 @@ def render_tab(df, key, t):
     detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
     if "Đã gia hạn" in detail.columns:
         detail["Đã gia hạn"] = detail["Đã gia hạn"].map({True: "Rồi", False: "Chưa"}).fillna("Chưa")
-    for dc in ("Purchase Time", "end_date_N", "Ngày gia hạn (N+1)"):
+    for dc in ("Purchase Time", "end_date_N", "Ngày gia hạn (N+1)", "Last study time"):
         if dc in detail.columns:
             detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%Y-%m-%d").fillna("")
+    if "Số ngày không học" in detail.columns:
+        detail["Số ngày không học"] = detail["Số ngày không học"].astype("Int64")
     sort_cols = [x for x in ["Sale Team", "UID"] if x in detail.columns]
     if sort_cols:
         detail = detail.sort_values(sort_cols)
