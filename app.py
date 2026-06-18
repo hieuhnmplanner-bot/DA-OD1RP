@@ -315,7 +315,7 @@ def render_tab(df, key, t):
         detail["Đã gia hạn"] = detail["Đã gia hạn"].map({True: "Rồi", False: "Chưa"}).fillna("Chưa")
     for dc in ("Purchase Time", "end_date_N", "Ngày gia hạn (N+1)", "Last study time"):
         if dc in detail.columns:
-            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%Y-%m-%d").fillna("")
+            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%d/%m/%Y").fillna("")
     if "Số ngày không học" in detail.columns:
         detail["Số ngày không học"] = detail["Số ngày không học"].astype("Int64")
     sort_cols = [x for x in ["Sale Team", "UID"] if x in detail.columns]
