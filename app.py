@@ -64,6 +64,9 @@ LANG = {
         "coh_c_remaining": "Buổi thừa (remaining_cohort)", "coh_c_source": "Nguồn",
         "coh_c_pkg": "Buổi gói", "coh_c_end": "end_date_cohort", "coh_c_month": "Cohort tháng",
         "coh_c_renew": "Ngày gia hạn", "coh_c_real": "Đã gia hạn?", "coh_c_m90": "Trong M+90?",
+        "coh_leg_due": "Số đơn đến hạn", "coh_y_due": "Số đơn đến hạn",
+        "coh_ontime": "🔵 Đúng hạn (M+90)", "coh_late": "🟡 Gia hạn trễ", "coh_notyet": "⚪ Chưa gia hạn",
+        "coh_groups_title": "📊 Cohort theo nhóm (Team / Sale / Advisor)",
     },
     "English": {
         "title": "📊 Retention / Renewal Dashboard",
@@ -108,6 +111,9 @@ LANG = {
         "coh_c_remaining": "Leftover (remaining_cohort)", "coh_c_source": "Source",
         "coh_c_pkg": "Pkg lessons", "coh_c_end": "end_date_cohort", "coh_c_month": "Cohort month",
         "coh_c_renew": "Renewal date", "coh_c_real": "Renewed?", "coh_c_m90": "Within M+90?",
+        "coh_leg_due": "Orders due", "coh_y_due": "Orders due",
+        "coh_ontime": "🔵 On time (M+90)", "coh_late": "🟡 Late renewal", "coh_notyet": "⚪ Not renewed",
+        "coh_groups_title": "📊 Cohort by group (Team / Sale / Advisor)",
     },
     "中文": {
         "title": "📊 续费留存看板",
@@ -150,6 +156,9 @@ LANG = {
         "coh_c_remaining": "剩余课时 (remaining_cohort)", "coh_c_source": "来源",
         "coh_c_pkg": "套餐课时", "coh_c_end": "end_date_cohort", "coh_c_month": "Cohort 月",
         "coh_c_renew": "续费日期", "coh_c_real": "已续费?", "coh_c_m90": "在 M+90 内?",
+        "coh_leg_due": "到期订单数", "coh_y_due": "到期订单数",
+        "coh_ontime": "🔵 准时 (M+90)", "coh_late": "🟡 延迟续费", "coh_notyet": "⚪ 未续费",
+        "coh_groups_title": "📊 同期群分组 (团队 / 销售 / 班主任)",
     },
 }
 
@@ -401,15 +410,55 @@ def agg_cohort_by_month(df):
 
 
 def cohort_chart(g, t):
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=g["cohort_month"], y=g["m90_rate"], name=t["coh_leg_m90"], marker_color="#1D9E75"))
-    fig.add_trace(go.Bar(x=g["cohort_month"], y=g["real_rate"], name=t["coh_leg_real"], marker_color="#85B7EB"))
-    fig.update_layout(title=t["coh_chart_title"], height=430, barmode="group",
-                      legend=dict(orientation="h", y=1.12), margin=dict(t=70, b=40, l=10, r=10),
-                      hovermode="x unified")
-    fig.update_yaxes(title_text=t["coh_y_rate"], range=[0, 100])
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=g["cohort_month"], y=g["due"], name=t["coh_leg_due"], marker_color="#4C78A8"),
+                  secondary_y=False)
+    fig.add_trace(go.Scatter(x=g["cohort_month"], y=g["m90_rate"], name=t["coh_leg_m90"],
+                             mode="lines+markers", line=dict(color="#1D9E75", width=3)),
+                  secondary_y=True)
+    fig.add_trace(go.Scatter(x=g["cohort_month"], y=g["real_rate"], name=t["coh_leg_real"],
+                             mode="lines+markers", line=dict(color="#E45756", width=3, dash="dot")),
+                  secondary_y=True)
+    fig.update_layout(title=t["coh_chart_title"], height=430, legend=dict(orientation="h", y=1.12),
+                      margin=dict(t=70, b=40, l=10, r=10), hovermode="x unified")
+    fig.update_yaxes(title_text=t["coh_y_due"], secondary_y=False)
+    fig.update_yaxes(title_text=t["coh_y_rate"], range=[0, 100], secondary_y=True)
     fig.update_xaxes(type="category")
     return fig
+
+
+def cohort_breakdown(df, col):
+    d = df[df[col].astype(str).str.len() > 0]
+    if d.empty:
+        return pd.DataFrame(columns=["name", "due", "m90", "real", "m90_rate", "real_rate"])
+    grp = d.groupby(col)
+    o = pd.DataFrame({"due": grp.size(), "m90": grp["m90_renewed"].sum(), "real": grp["real_renewed"].sum()})
+    o["m90_rate"] = (o["m90"] / o["due"] * 100).round(1)
+    o["real_rate"] = (o["real"] / o["due"] * 100).round(1)
+    return o.reset_index().rename(columns={col: "name"})
+
+
+def render_cohort_breakdown_tables(df, t):
+    if df.empty:
+        return
+    lang = st.session_state.get("_lang", "Tiếng Việt")
+    st.subheader(t["coh_groups_title"])
+    for col, lab, cap in [("team", t["by_team"], 0), ("sale", t["by_sale"], 20), ("teacher", t["by_advisor"], 20)]:
+        if col not in df.columns:
+            continue
+        b = cohort_breakdown(df, col)
+        if b.empty:
+            continue
+        b = b.sort_values("due", ascending=False)
+        head = f"**{lab}**" + (f"  ·  top {cap}" if cap and len(b) > cap else "")
+        if cap:
+            b = b.head(cap)
+        st.markdown(head)
+        disp = pd.DataFrame({lab: b["name"].astype(str),
+                             t["coh_total"]: b["due"].astype(int),
+                             "M+90": [_pct(v, lang) for v in b["m90_rate"]],
+                             "Real": [_pct(v, lang) for v in b["real_rate"]]})
+        st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
 def render_cohort_tab(df, key, t):
@@ -418,8 +467,10 @@ def render_cohort_tab(df, key, t):
         return
     base = df[df["cohort_month"].astype(str).str.len().eq(7)].copy()
     total = int(len(base))
-    real_rate = float(base["real_renewed"].mean() * 100) if total else 0
-    m90_rate = float(base["m90_renewed"].mean() * 100) if total else 0
+    m90_n = int(base["m90_renewed"].sum())
+    real_n = int(base["real_renewed"].sum())
+    real_rate = (real_n / total * 100) if total else 0
+    m90_rate = (m90_n / total * 100) if total else 0
 
     with st.expander(t["coh_help"], expanded=False):
         st.markdown(t["coh_desc"])
@@ -428,6 +479,10 @@ def render_cohort_tab(df, key, t):
     a[0].metric(t["coh_m90"], _pct(m90_rate), help=t["coh_m90_h"])
     a[1].metric(t["coh_real"], _pct(real_rate), help=t["coh_real_h"])
     a[2].metric(t["coh_total"], f"{total:,}")
+    b = st.columns(3)
+    b[0].metric(t["coh_ontime"], f"{m90_n:,}")
+    b[1].metric(t["coh_late"], f"{real_n - m90_n:,}")
+    b[2].metric(t["coh_notyet"], f"{total - real_n:,}")
 
     g = agg_cohort_by_month(base)
     if not g.empty:
@@ -439,6 +494,8 @@ def render_cohort_tab(df, key, t):
                                "M+90": [_pct(v) for v in g["m90_rate"]],
                                "Real": [_pct(v) for v in g["real_rate"]]})
             st.dataframe(gv, use_container_width=True, hide_index=True)
+
+    render_cohort_breakdown_tables(base, t)
 
     st.subheader(t["detail"])
     colmap = [("uid", "UID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
