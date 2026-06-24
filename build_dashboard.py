@@ -8,17 +8,17 @@ chi TINH THEM value_chain / vc_order_num de co view OD1 -> OD2. Khong tinh lai t
 Input:  da1rp_remaining_lesson3.csv  (export remaining_lesson3, NEN co header)
 Output: outputs/dashboard_data.csv
 
-Export goi y (BAT header khi luu trong SSMS):
-  SELECT uid, order_id, end_date_n, remain_lesson_number, status_renew,
+Export (export_remaining_lesson3.py tu lam): can them total_lesson cho cohort (Tab 3/4).
+  SELECT uid, order_id, end_date_n, remain_lesson_number, total_lesson, status_renew,
          teacher, sale, depart7_name_sale, order_price_vnd, purchase_time,
-         order_num, type_lesson, type_sale, package_name
+         order_num, type_lesson, type_sale, package_name, payment_number_n_1, last_class_time
   FROM remaining_lesson3
 """
 import io, re
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import OUTPUT_DIR, DA1RP_SEED
+from config import OUTPUT_DIR, DA1RP_SEED, LAST_STUDY_SEED
 
 RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
 
@@ -38,6 +38,7 @@ ALIASES = {
     "status": ["type_lesson", "status"],
     "source_type": ["type_sale", "source_name", "source_type"],
     "package": ["package_name", "package"],
+    "total_lesson": ["total_lesson", "total lesson", "totallesson", "tong_buoi"],
     "renewal_payment": ["payment_number_n_1", "payment_number_n1", "renewal_payment", "payment_n_1"],
     "last_class": ["last_class_time", "last class time", "last_class", "last_study_time", "last study time"],
 }
@@ -69,6 +70,88 @@ def _resolve(df):
                 out[std] = cols[_norm(a)]
                 break
     return out
+
+
+DPL = 3.5  # ngay / buoi (2 buoi/tuan ~ 3,5 ngay/buoi)
+
+
+def _parse_pkg_lessons(name):
+    """FALLBACK uoc luong so buoi tu package_name khi thieu cot total_lesson (chi de TEST).
+    So that phai lay tu cot total_lesson (export DA1RP). Day chi lay so dau tien."""
+    mt = re.search(r"(\d{2,3})", str(name))
+    return int(mt.group(1)) if mt else 50
+
+
+def _load_history():
+    """Doc last_study_history (uid, run_datetime, remain). None neu khong co file."""
+    try:
+        if not Path(LAST_STUDY_SEED).exists():
+            return None
+        h = pd.read_csv(LAST_STUDY_SEED, dtype=str, encoding="utf-8-sig")
+        if h.empty:
+            return None
+        h["run_datetime"] = pd.to_datetime(h["run_datetime"], errors="coerce", format="mixed")
+        h["remain"] = pd.to_numeric(h["remain"], errors="coerce")
+        h["uid"] = h["uid"].map(lambda x: re.sub(r"\.0$", "", str(x)).strip())
+        return h.dropna(subset=["run_datetime", "remain"]).sort_values("run_datetime")
+    except Exception as e:
+        print(f"  (bo qua last_study_history: {e})")
+        return None
+
+
+def add_cohort_columns(out, hist):
+    """Them cac cot COHORT (CS view - Tab 3/4). CHI them cot moi, KHONG dung cot Tab 1/2.
+    end_date_cohort = ngay mua + (remaining_cohort + total_lesson) x 3,5 (khoa cung).
+    remaining_cohort = buoi thua luc mua: tu last_study_history (do) hoac suy ra tu chuoi.
+    """
+    out = out.sort_values(["uid", "purchase_time", "order_num"]).reset_index(drop=True)
+    n = len(out)
+    out["_row"] = range(n)
+    pur = pd.to_datetime(out["purchase_time"], errors="coerce")
+    pkg = pd.to_numeric(out["total_lesson"], errors="coerce")
+
+    # buoi thua THAT: ban ghi last_study_history gan nhat TRUOC ngay mua (tranh remain nhay do goi moi)
+    actual = pd.Series([pd.NA] * n)
+    if hist is not None and not hist.empty:
+        left = out[["_row", "uid"]].copy()
+        left["_pday"] = pur.dt.normalize()
+        left = left.dropna(subset=["_pday"]).sort_values("_pday")
+        mrg = pd.merge_asof(left, hist[["uid", "run_datetime", "remain"]],
+                            left_on="_pday", right_on="run_datetime", by="uid",
+                            direction="backward", allow_exact_matches=False)
+        actual = mrg.set_index("_row")["remain"].reindex(range(n))
+
+    cohort_end = [pd.NaT] * n
+    rem = [pd.NA] * n
+    src = [""] * n
+    for _uid, grp in out.groupby("uid", sort=False):
+        prev = None
+        for i in grp["_row"]:
+            p, k, a = pur.iloc[i], pkg.iloc[i], actual.iloc[i]
+            if pd.isna(p) or pd.isna(k):
+                prev = None
+                continue
+            if prev is None:                      # don dau chuoi: khong co buoi thua
+                left_n, s = 0.0, "đầu chuỗi"
+            elif pd.notna(a):                     # co remain THAT tu history
+                left_n, s = max(0.0, float(a)), "đo"
+            else:                                 # suy ra tu chuoi
+                left_n, s = max(0.0, (prev - p).days / DPL), "suy ra"
+            end = p + pd.Timedelta(days=round((left_n + float(k)) * DPL))
+            cohort_end[i], rem[i], src[i] = end, int(round(left_n)), s
+            prev = end
+
+    out["end_date_cohort"] = cohort_end
+    out["remaining_cohort"] = rem
+    out["remaining_source"] = src
+    ec = pd.to_datetime(out["end_date_cohort"], errors="coerce")
+    out["cohort_month"] = ec.dt.strftime("%Y-%m")
+    # gia han = don ke tiep cua CUNG UID (bat ky chuoi nao - Real dem ca >90 ngay)
+    out["cohort_renew_date"] = out.groupby("uid")["purchase_time"].shift(-1)
+    crn = pd.to_datetime(out["cohort_renew_date"], errors="coerce")
+    out["real_renewed"] = crn.notna()
+    out["m90_renewed"] = crn.notna() & (crn <= ec + pd.Timedelta(days=90))
+    return out.drop(columns=["_row"])
 
 
 def main():
@@ -111,7 +194,7 @@ def main():
     out["sale"] = g("sale").fillna("") if "sale" in m else ""
     out["teacher"] = g("teacher").fillna("") if "teacher" in m else ""
     out["package"] = g("package").fillna("") if "package" in m else ""
-    out["order_id"] = g("order_id").astype(str)
+    out["order_id"] = g("order_id").map(lambda x: re.sub(r"\.0$", "", str(x)).strip())
     out["end_date"] = pd.to_datetime(g("end_date_n"), errors="coerce", format="mixed")
     out["purchase_time"] = pd.to_datetime(g("purchase_time"), errors="coerce", format="mixed") if "purchase_time" in m else pd.NaT
     out["last_class"] = pd.to_datetime(g("last_class"), errors="coerce", format="mixed") if "last_class" in m else pd.NaT
@@ -124,6 +207,11 @@ def main():
     out["status_renew"] = g("status_renew").where(g("status_renew").notna(), "")
     out["source_type"] = g("source_type").fillna("") if "source_type" in m else ""
     out["renewal_payment"] = pd.to_numeric(g("renewal_payment"), errors="coerce").fillna(0) if "renewal_payment" in m else 0
+    if "total_lesson" in m:
+        out["total_lesson"] = pd.to_numeric(g("total_lesson"), errors="coerce")
+    else:
+        out["total_lesson"] = out["package"].map(_parse_pkg_lessons)
+        print("  (!) Khong co cot total_lesson -> uoc luong THO tu package_name (chi de TEST; so that can total_lesson tu export).")
 
     # ---- TINH THEM value_chain / vc_order_num (reset khi nghi > 90 ngay) ----
     out = out.sort_values(["uid", "purchase_time", "order_num"]).reset_index(drop=True)
@@ -141,6 +229,9 @@ def main():
     out["renewed_next"] = out["renew_date_n1"].notna()
 
     out["renewed"] = out["status_renew"].isin(RENEWAL)
+
+    # ---- COHORT (CS view - Tab 3/4): them cot moi, KHONG sua cot Tab 1/2 ----
+    out = add_cohort_columns(out, _load_history())
 
     # CHOT CHAN: neu qua nhieu end_date rong -> sai cot (export headerless sai thu tu)
     _valid = float(out["end_date"].notna().mean())

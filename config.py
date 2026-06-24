@@ -19,6 +19,7 @@ STATE_DIR = HERE / "state"
 DIM_SALE_CSV = HERE / "dim_sale.csv"           # thay cho Google Sheet dim_sale
 SNAPSHOT_PREV = STATE_DIR / "snapshot_prev.csv"  # thay cho snapshot 'hom qua' tu DB
 DA1RP_SEED = HERE / "da1rp_remaining_lesson3.csv"  # nguon seed end_date + status_renew tu DA1RP
+LAST_STUDY_SEED = HERE / "da1rp_last_study_history.csv"  # lich su remain per UID (cho cohort) - co the thieu
 for d in (OUTPUT_DIR, STATE_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
