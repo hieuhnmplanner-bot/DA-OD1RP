@@ -428,13 +428,23 @@ def cohort_chart(g, t):
 
 
 def cohort_breakdown(df, col):
-    d = df[df[col].astype(str).str.len() > 0]
+    d = df[df[col].astype(str).str.len() > 0].copy()
     if d.empty:
-        return pd.DataFrame(columns=["name", "due", "m90", "real", "m90_rate", "real_rate"])
-    grp = d.groupby(col)
-    o = pd.DataFrame({"due": grp.size(), "m90": grp["m90_renewed"].sum(), "real": grp["real_renewed"].sum()})
-    o["m90_rate"] = (o["m90"] / o["due"] * 100).round(1)
-    o["real_rate"] = (o["real"] / o["due"] * 100).round(1)
+        return pd.DataFrame(columns=["name", "due", "crr", "rrr", "upsell", "revenue", "real_rate"])
+    d["_money"] = pd.to_numeric(d["real_money"], errors="coerce").fillna(0) if "real_money" in d.columns else 0
+    rev_col = "renewal_payment" if "renewal_payment" in d.columns else "real_money"
+    d["_new"] = pd.to_numeric(d[rev_col], errors="coerce").fillna(0)
+    m90 = d[d["m90_renewed"]]
+    o = pd.DataFrame({"due": d.groupby(col).size()})
+    o["m90_n"] = m90.groupby(col).size().reindex(o.index).fillna(0)
+    o["real_n"] = d[d["real_renewed"]].groupby(col).size().reindex(o.index).fillna(0)
+    o["revenue"] = m90.groupby(col)["_new"].sum().reindex(o.index).fillna(0)
+    o["_old"] = m90.groupby(col)["_money"].sum().reindex(o.index).fillna(0)
+    o["_exp"] = d.groupby(col)["_money"].sum().reindex(o.index).fillna(0)
+    o["crr"] = (o["m90_n"] / o["due"] * 100).round(1)
+    o["rrr"] = (o["revenue"] / o["_exp"].where(o["_exp"] > 0) * 100).round(1).fillna(0)
+    o["upsell"] = (o["revenue"] / o["_old"].where(o["_old"] > 0) * 100).round(1).fillna(0)
+    o["real_rate"] = (o["real_n"] / o["due"] * 100).round(1)
     return o.reset_index().rename(columns={col: "name"})
 
 
@@ -456,8 +466,11 @@ def render_cohort_breakdown_tables(df, t):
         st.markdown(head)
         disp = pd.DataFrame({lab: b["name"].astype(str),
                              t["coh_total"]: b["due"].astype(int),
-                             "M+90": [_pct(v, lang) for v in b["m90_rate"]],
-                             "Real": [_pct(v, lang) for v in b["real_rate"]]})
+                             "CRR": [_pct(v, lang) for v in b["crr"]],
+                             "RRR": [_pct(v, lang) for v in b["rrr"]],
+                             "Upsell": [_pct(v, lang) for v in b["upsell"]],
+                             "Real": [_pct(v, lang) for v in b["real_rate"]],
+                             t["revenue"]: [_fmt_money(v, lang) for v in b["revenue"]]})
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
@@ -466,23 +479,35 @@ def render_cohort_tab(df, key, t):
         st.warning(t["no_data"])
         return
     base = df[df["cohort_month"].astype(str).str.len().eq(7)].copy()
+    lang = st.session_state.get("_lang", "Tiếng Việt")
     total = int(len(base))
-    m90_n = int(base["m90_renewed"].sum())
+    m90_mask = base["m90_renewed"] if "m90_renewed" in base.columns else pd.Series(False, index=base.index)
+    m90_n = int(m90_mask.sum())
     real_n = int(base["real_renewed"].sum())
     real_rate = (real_n / total * 100) if total else 0
-    m90_rate = (m90_n / total * 100) if total else 0
+    crr = (m90_n / total * 100) if total else 0          # CRR (cohort) = ty le M+90 (don ke tiep trong 90 ngay)
+    money = pd.to_numeric(base["real_money"], errors="coerce").fillna(0) if "real_money" in base.columns else pd.Series(0.0, index=base.index)
+    rev_col = "renewal_payment" if "renewal_payment" in base.columns else "real_money"
+    renew_new = pd.to_numeric(base.loc[m90_mask, rev_col], errors="coerce").fillna(0).sum()   # DT gia han (M+90)
+    renew_old = money[m90_mask].sum()
+    expiring_total = money.sum()
+    rrr = (renew_new / expiring_total * 100) if expiring_total else 0
+    upsell = (renew_new / renew_old * 100) if renew_old else 0
 
     with st.expander(t["coh_help"], expanded=False):
         st.markdown(t["coh_desc"])
 
-    a = st.columns(3)
-    a[0].metric(t["coh_m90"], _pct(m90_rate), help=t["coh_m90_h"])
-    a[1].metric(t["coh_real"], _pct(real_rate), help=t["coh_real_h"])
-    a[2].metric(t["coh_total"], f"{total:,}")
-    b = st.columns(3)
-    b[0].metric(t["coh_ontime"], f"{m90_n:,}")
-    b[1].metric(t["coh_late"], f"{real_n - m90_n:,}")
-    b[2].metric(t["coh_notyet"], f"{total - real_n:,}")
+    a = st.columns(5)
+    a[0].metric(t["coh_total"], f"{total:,}")
+    a[1].metric(t["crr"], _pct(crr), help=t["crr_h"])
+    a[2].metric(t["rrr"], _pct(rrr), help=t["rrr_h"])
+    a[3].metric(t["upsell"], _pct(upsell), help=t["upsell_h"])
+    a[4].metric(t["revenue"], _fmt_money(renew_new, lang), help=t["rev_h"])
+    b = st.columns(4)
+    b[0].metric(t["coh_real"], _pct(real_rate), help=t["coh_real_h"])
+    b[1].metric(t["coh_ontime"], f"{m90_n:,}")
+    b[2].metric(t["coh_late"], f"{real_n - m90_n:,}")
+    b[3].metric(t["coh_notyet"], f"{total - real_n:,}")
 
     g = agg_cohort_by_month(base)
     if not g.empty:
