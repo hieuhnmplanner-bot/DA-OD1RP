@@ -25,7 +25,7 @@ LANG = {
         "title": "📊 Dashboard Retention / Gia hạn",
         "filters": "Bộ lọc", "language": "Ngôn ngữ",
         "from_month": "Từ tháng", "to_month": "Đến tháng", "team": "Team",
-        "sale_f": "Sale", "advisor_f": "Advisor (GVCN)", "uid_f": "UID (gõ số, cách nhau dấu phẩy)", "all_hint": "Để trống = tất cả", "all_short": "Tất cả",
+        "sale_f": "Sale", "advisor_f": "Advisor (GVCN)", "status_f": "Trạng thái", "uid_f": "UID (gõ số, cách nhau dấu phẩy)", "all_hint": "Để trống = tất cả", "all_short": "Tất cả",
         "tab_group": "📊 Theo nhóm", "by_team": "Theo Team", "by_sale": "Theo Sale", "by_advisor": "Theo Advisor",
         "groups_title": "📊 Thống kê theo nhóm (Team / Sale / Advisor)",
         "metric_pick": "Chỉ số xem", "n_sel": "{n} đã chọn",
@@ -72,7 +72,7 @@ LANG = {
         "title": "📊 Retention / Renewal Dashboard",
         "filters": "Filters", "language": "Language",
         "from_month": "From month", "to_month": "To month", "team": "Team",
-        "sale_f": "Sale", "advisor_f": "Advisor", "uid_f": "UID (type number, comma-separated)", "all_hint": "Empty = all", "all_short": "All",
+        "sale_f": "Sale", "advisor_f": "Advisor", "status_f": "Status", "uid_f": "UID (type number, comma-separated)", "all_hint": "Empty = all", "all_short": "All",
         "tab_group": "📊 By group", "by_team": "By Team", "by_sale": "By Sale", "by_advisor": "By Advisor",
         "groups_title": "📊 Breakdown by group (Team / Sale / Advisor)",
         "metric_pick": "Metric", "n_sel": "{n} selected",
@@ -119,7 +119,7 @@ LANG = {
         "title": "📊 续费留存看板",
         "filters": "筛选", "language": "语言",
         "from_month": "起始月", "to_month": "结束月", "team": "团队",
-        "sale_f": "销售", "advisor_f": "班主任", "uid_f": "UID (输入数字，逗号分隔)", "all_hint": "留空 = 全部", "all_short": "全部",
+        "sale_f": "销售", "advisor_f": "班主任", "status_f": "状态", "uid_f": "UID (输入数字，逗号分隔)", "all_hint": "留空 = 全部", "all_short": "全部",
         "tab_group": "📊 按分组", "by_team": "按团队", "by_sale": "按销售", "by_advisor": "按班主任",
         "groups_title": "📊 分组统计 (团队 / 销售 / 班主任)",
         "metric_pick": "指标", "n_sel": "已选 {n}",
@@ -584,6 +584,7 @@ else:
 
 sales = sorted([x for x in df_all.get("sale", pd.Series(dtype=str)).dropna().unique() if x])
 advisors = sorted([x for x in df_all.get("teacher", pd.Series(dtype=str)).dropna().unique() if x])
+statuses = sorted([x for x in df_all.get("status", pd.Series(dtype=str)).dropna().unique() if x])
 
 # Tat ca multiselect: DE TRONG = TAT CA (khong roi tag)
 def _ms_popover(label, options, key):
@@ -595,8 +596,8 @@ def _ms_popover(label, options, key):
 sel_teams = _ms_popover(t["team"], teams, "ms_team")
 sel_sales = _ms_popover(t["sale_f"], sales, "ms_sale")
 sel_adv = _ms_popover(t["advisor_f"], advisors, "ms_adv")
+sel_status = _ms_popover(t["status_f"], statuses, "ms_status")
 uid_q = st.sidebar.text_input(t["uid_f"], value="")
-exclude_expired = st.sidebar.checkbox(t["active_only"], value=False)
 
 mask = pd.Series(True, index=df_all.index)
 if sel_teams:
@@ -612,8 +613,8 @@ if uid_q.strip():
     for tk in toks:
         m_uid |= uids.str.contains(tk, regex=False)
     mask &= m_uid
-if exclude_expired:
-    mask &= ~df_all["status"].str.lower().isin(["expired", "on-hold", "on hold"])
+if sel_status:
+    mask &= df_all["status"].isin(sel_status)
 
 # Tab 1/2 loc thang theo end_month ; Tab 3/4 loc thang theo cohort_month
 mask_end = (mask & df_all["end_month"].between(m_start, m_end)) if m_start else mask
