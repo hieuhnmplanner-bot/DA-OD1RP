@@ -523,9 +523,9 @@ def render_cohort_tab(df, key, t):
     render_cohort_breakdown_tables(base, t)
 
     st.subheader(t["detail"])
-    colmap = [("uid", "UID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
+    colmap = [("uid", "UID"), ("order_id", "Order ID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
               ("package", "Package"), ("purchase_time", "Purchase Time"),
-              ("remaining_cohort", t["coh_c_remaining"]), ("remaining_source", t["coh_c_source"]),
+              ("remaining_cohort", t["coh_c_remaining"]),
               ("total_lesson", t["coh_c_pkg"]), ("end_date_cohort", t["coh_c_end"]),
               ("cohort_month", t["coh_c_month"]), ("cohort_renew_date", t["coh_c_renew"]),
               ("real_renewed", t["coh_c_real"]), ("m90_renewed", t["coh_c_m90"]),
