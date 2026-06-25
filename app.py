@@ -527,6 +527,7 @@ def render_cohort_tab(df, key, t):
               ("package", "Package"), ("purchase_time", "Purchase Time"),
               ("remaining_cohort", t["coh_c_remaining"]),
               ("total_lesson", t["coh_c_pkg"]), ("end_date_cohort", t["coh_c_end"]),
+              ("end_date", "end_date_N"),
               ("cohort_month", t["coh_c_month"]), ("cohort_renew_date", t["coh_c_renew"]),
               ("real_renewed", t["coh_c_real"]), ("m90_renewed", t["coh_c_m90"]),
               ("status_renew", "Status Renewal")]
@@ -535,7 +536,7 @@ def render_cohort_tab(df, key, t):
     for fc in (t["coh_c_real"], t["coh_c_m90"]):
         if fc in detail.columns:
             detail[fc] = detail[fc].map({True: "✓", False: "—"}).fillna("—")
-    for dc in ("Purchase Time", t["coh_c_end"], t["coh_c_renew"]):
+    for dc in ("Purchase Time", t["coh_c_end"], "end_date_N", t["coh_c_renew"]):
         if dc in detail.columns:
             detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%d/%m/%Y").fillna("")
     for nc in (t["coh_c_pkg"], t["coh_c_remaining"]):
