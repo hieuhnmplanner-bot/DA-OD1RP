@@ -22,7 +22,11 @@ CONN_STR = (
 # Lay dung cac cot build_dashboard can, CO header -> map theo TEN, khong bao gio lech.
 QUERY = """
 SELECT uid, order_id, end_date_n, remain_lesson_number, total_lesson, status_renew,
-       teacher, sale, depart7_name_sale, order_price_vnd, purchase_time,
+       teacher,
+       COALESCE(NULLIF(LTRIM(RTRIM(sale_close)), ''), sale) AS sale,
+       CASE WHEN LTRIM(RTRIM(close_sale_team)) NOT IN ('', 'Other', 'Not have Sale care')
+            THEN close_sale_team ELSE depart7_name_sale END AS depart7_name_sale,
+       order_price_vnd, purchase_time,
        order_num, type_lesson, type_sale, package_name, payment_number_n_1,
        last_class_time
 FROM remaining_lesson3
