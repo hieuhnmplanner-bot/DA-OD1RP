@@ -466,9 +466,11 @@ def render_cohort_breakdown_tables(df, t):
         st.markdown(head)
         disp = pd.DataFrame({lab: b["name"].astype(str),
                              t["coh_total"]: b["due"].astype(int),
+                             "Đã GH (M+90)": b["m90_n"].astype(int),
                              "CRR": [_pct(v, lang) for v in b["crr"]],
                              "RRR": [_pct(v, lang) for v in b["rrr"]],
                              "Upsell": [_pct(v, lang) for v in b["upsell"]],
+                             "Đã GH (Real)": b["real_n"].astype(int),
                              "Real": [_pct(v, lang) for v in b["real_rate"]],
                              t["revenue"]: [_fmt_money(v, lang) for v in b["revenue"]]})
         st.dataframe(disp, use_container_width=True, hide_index=True)
