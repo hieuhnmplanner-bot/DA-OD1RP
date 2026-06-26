@@ -52,6 +52,10 @@ LANG = {
         "t5_empty": "Không có đơn chưa kích hoạt trong khoảng tháng đã chọn.",
         "t5_uid": "Số khách", "t5_ord": "Số đơn", "t5_money": "Tổng giá trị",
         "t5_paytime": "Ngày mua (Pay Time)", "t5_value": "Giá trị đơn",
+        "tab_tab6": "6️⃣ Đang bảo lưu",
+        "t6_desc": "Khách ĐANG bảo lưu (frozen) ở đơn mới nhất → tách riêng, KHÔNG tính vào cohort Tab 3/4 (đang tạm dừng nên chưa đến hạn gia hạn). Lọc theo tháng mua. Đơn cũ của khách vẫn nằm ở Tab 3/4.",
+        "t6_empty": "Không có đơn đang bảo lưu trong khoảng tháng đã chọn.",
+        "t6_remain": "Còn buổi", "t6_lastclass": "Buổi học cuối",
         "coh_cap": "Chỉ tính đơn ĐẦU mỗi chuỗi (gia hạn lần đầu OD1→OD2).",
         "coh_help": "ℹ️ Cách đọc tab này (cách tính cohort)",
         "coh_desc": ("Mỗi khách có một **“tháng dự kiến cần gia hạn”** = tháng họ học gần hết gói "
@@ -104,6 +108,10 @@ LANG = {
         "t5_empty": "No not-activated orders in the selected month range.",
         "t5_uid": "Customers", "t5_ord": "Orders", "t5_money": "Total value",
         "t5_paytime": "Pay date", "t5_value": "Order value",
+        "tab_tab6": "6️⃣ On hold (frozen)",
+        "t6_desc": "Customers currently FROZEN on their latest order → separated, EXCLUDED from the Tab 3/4 cohort (paused, not due yet). Filtered by purchase month. Their older orders stay in Tab 3/4.",
+        "t6_empty": "No frozen orders in the selected month range.",
+        "t6_remain": "Remaining", "t6_lastclass": "Last class",
         "coh_cap": "Only the FIRST order of each chain (first renewal OD1→OD2).",
         "coh_help": "ℹ️ How to read this tab (cohort method)",
         "coh_desc": ("Each customer has an **“expected renewal month”** = the month they nearly finish their package "
@@ -156,6 +164,10 @@ LANG = {
         "t5_empty": "所选月份范围内没有未激活订单。",
         "t5_uid": "客户数", "t5_ord": "订单数", "t5_money": "总金额",
         "t5_paytime": "购买日期", "t5_value": "订单金额",
+        "tab_tab6": "6️⃣ 冻结中",
+        "t6_desc": "最新订单处于冻结（bảo lưu）状态的客户 → 单独分出，不计入 Tab 3/4 同期群（暂停中，尚未到期）。按购买月份筛选。其旧订单仍保留在 Tab 3/4。",
+        "t6_empty": "所选月份范围内没有冻结订单。",
+        "t6_remain": "剩余课时", "t6_lastclass": "最后上课",
         "coh_cap": "仅统计每个周期的第 1 单（首次续费 OD1→OD2）。",
         "coh_help": "ℹ️ 如何看本页（同期群算法）",
         "coh_desc": ("每位客户有一个**“预计续费月份”** = 他们快上完套餐的月份（按课时 + 每周约 2 节）。本页按该月份分组。\n\n"
@@ -603,6 +615,39 @@ def render_tab5(df, t):
                        file_name="tab5_chua_kich_hoat.csv", mime="text/csv", key="dl_t5")
 
 
+def render_tab6(df, t):
+    """Tab 6 - don DANG BAO LUU (frozen, don da kich hoat moi nhat). Loc theo thang mua."""
+    st.caption(t["t6_desc"])
+    if df.empty:
+        st.info(t["t6_empty"])
+        return
+    lang = st.session_state.get("_lang", "Tiếng Việt")
+    money = pd.to_numeric(df["real_money"], errors="coerce").fillna(0).sum() if "real_money" in df.columns else 0
+    a = st.columns(3)
+    a[0].metric(t["t5_uid"], f"{df['uid'].nunique():,}")
+    a[1].metric(t["t5_ord"], f"{len(df):,}")
+    a[2].metric(t["t5_money"], _fmt_money(money, lang))
+    colmap = [("uid", "UID"), ("order_id", "Order ID"), ("purchase_time", t["t5_paytime"]),
+              ("package", "Package"), ("total_lesson", t["coh_c_pkg"]),
+              ("remain_lesson", t["t6_remain"]), ("last_class", t["t6_lastclass"]),
+              ("real_money", t["t5_value"]), ("teacher", "Advisor"), ("sale", "Sale"),
+              ("team", "Sale Team"), ("status", "Status")]
+    cols = [(s, dd) for s, dd in colmap if s in df.columns]
+    detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
+    for dc in (t["t5_paytime"], t["t6_lastclass"]):
+        if dc in detail.columns:
+            detail[dc] = pd.to_datetime(detail[dc], errors="coerce", format="mixed").dt.strftime("%d/%m/%Y").fillna("")
+    if t["t5_value"] in detail.columns:
+        detail[t["t5_value"]] = pd.to_numeric(detail[t["t5_value"]], errors="coerce")
+    for nc in (t["coh_c_pkg"], t["t6_remain"]):
+        if nc in detail.columns:
+            detail[nc] = pd.to_numeric(detail[nc], errors="coerce").astype("Int64")
+    detail = detail.sort_values("UID")
+    st.dataframe(detail, use_container_width=True, hide_index=True)
+    st.download_button(t["download"], detail.to_csv(index=False).encode("utf-8-sig"),
+                       file_name="tab6_dang_bao_luu.csv", mime="text/csv", key="dl_t6")
+
+
 # ---------------- Load ----------------
 if not DATA.exists():
     up = st.file_uploader("dashboard_data.csv?", type=["csv"])
@@ -622,8 +667,11 @@ st.sidebar.header(t["filters"])
 
 _em = set(df_all["end_month"].dropna().unique())
 _cm = set(df_all["cohort_month"].dropna().unique()) if "cohort_month" in df_all.columns else set()
-# them thang MUA cua don chua kich hoat (placeholder) -> Tab 5 loc duoc theo pay_month
-_pm = set(df_all.loc[df_all["order_id"].astype(str).str.contains("_order_", na=False), "pay_month"].dropna().unique()) if "pay_month" in df_all.columns else set()
+# them thang MUA cua don tach rieng (placeholder Tab5 + bao luu Tab6) -> loc duoc theo pay_month
+_special = df_all["order_id"].astype(str).str.contains("_order_", na=False)
+if "frozen_latest" in df_all.columns:
+    _special = _special | df_all["frozen_latest"].astype(str).str.lower().isin(["true", "1", "1.0"])
+_pm = set(df_all.loc[_special, "pay_month"].dropna().unique()) if "pay_month" in df_all.columns else set()
 months = sorted([m for m in (_em | _cm | _pm) if m and len(str(m)) == 7])
 teams = sorted([x for x in df_all["team"].dropna().unique() if x])
 
@@ -688,10 +736,20 @@ if m_start and "pay_month" in df_all.columns:
     mask_t5 = mask_t5 & df_all["pay_month"].between(m_start, m_end)
 df_tab5 = df_all[mask_t5].copy()
 
+# Tab 6 (dang bao luu): don frozen_latest, loc theo thang MUA (pay_month)
+if "frozen_latest" in df_all.columns:
+    _fl = df_all["frozen_latest"].astype(str).str.lower().isin(["true", "1", "1.0"])
+else:
+    _fl = pd.Series(False, index=df_all.index)
+mask_t6 = mask & _fl
+if m_start and "pay_month" in df_all.columns:
+    mask_t6 = mask_t6 & df_all["pay_month"].between(m_start, m_end)
+df_tab6 = df_all[mask_t6].copy()
+
 st.caption(t["filtering"].format(a=m_start, b=m_end, n=(len(sel_teams) or len(teams)), o=len(df_f)))
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    [t["tab_all"], t["tab_od1"], t["tab_cohort_all"], t["tab_cohort_od1"], t["tab_tab5"]])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    [t["tab_all"], t["tab_od1"], t["tab_cohort_all"], t["tab_cohort_od1"], t["tab_tab5"], t["tab_tab6"]])
 with tab1:
     render_tab(df_f, "all", t)
 with tab2:
@@ -706,3 +764,5 @@ with tab4:
     render_cohort_tab(coh_od1, "coh_od1", t)
 with tab5:
     render_tab5(df_tab5, t)
+with tab6:
+    render_tab6(df_tab6, t)

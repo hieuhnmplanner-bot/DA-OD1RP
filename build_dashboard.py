@@ -18,7 +18,7 @@ import io, re
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from config import OUTPUT_DIR, DA1RP_SEED, LAST_STUDY_SEED
+from config import OUTPUT_DIR, DA1RP_SEED, LAST_STUDY_SEED, IS_FROZEN_SEED
 
 RENEWAL = ["Early Renewal", "On-time Renewal", "Late Renewal"]
 
@@ -99,6 +99,22 @@ def _load_history():
         return None
 
 
+def _load_is_frozen():
+    """Doc da1rp_is_frozen.csv (order_id, is_frozen). None neu khong co file."""
+    try:
+        if not Path(IS_FROZEN_SEED).exists():
+            return None
+        f = pd.read_csv(IS_FROZEN_SEED, dtype=str)
+        if f.empty or "order_id" not in f.columns:
+            return None
+        f["order_id"] = f["order_id"].map(lambda x: re.sub(r"\.0$", "", str(x)).strip())
+        f["is_frozen"] = pd.to_numeric(f["is_frozen"], errors="coerce").fillna(0).astype(int)
+        return f[f["order_id"].ne("")].drop_duplicates("order_id").set_index("order_id")["is_frozen"]
+    except Exception as e:
+        print(f"  (bo qua is_frozen: {e})")
+        return None
+
+
 def add_cohort_columns(out, hist=None):
     """Them cac cot COHORT (CS view - Tab 3/4). CHI them cot moi, KHONG dung cot Tab 1/2.
 
@@ -122,6 +138,16 @@ def add_cohort_columns(out, hist=None):
     # Don CHUA KICH HOAT = placeholder (order_id 'uid_order_N' - chua co ma that tu he thong hoc)
     not_activated = out["order_id"].astype(str).str.contains("_order_", na=False)
 
+    # DON BAO LUU (frozen) + la don DA KICH HOAT moi nhat cua UID -> loai khoi cohort (-> Tab 6).
+    # Don CU cua UID bao luu VAN giu o cohort (frozen la cap tai khoan, gan ca don cu ->
+    # neu loai het se sai du lieu qua khu). 'Moi nhat' = don da kich hoat (bo placeholder) mua sau cung.
+    frz = pd.to_numeric(out["is_frozen"], errors="coerce").fillna(0).eq(1) if "is_frozen" in out.columns else pd.Series(False, index=out.index)
+    activated = ~not_activated
+    _seq = pd.Series(range(len(out)), index=out.index)
+    _last_act = _seq.where(activated).groupby(out["uid"]).transform("max")
+    is_latest_activated = activated & _seq.eq(_last_act)
+    frozen_latest = frz & is_latest_activated
+
     # DANG HOC gan day = con remain > 0 VA co buoi hoc trong 90 ngay gan day (va da kich hoat)
     recent_study = lc.notna() & ((today - lc).dt.days <= 90)
     is_active = rem.gt(0) & recent_study & (~not_activated)
@@ -132,6 +158,7 @@ def add_cohort_columns(out, hist=None):
     src = pd.Series("quá khứ", index=out.index)
     src[is_active] = "đang chạy"
     src[not_activated] = "chưa kích hoạt"
+    src[frozen_latest] = "bảo lưu"
 
     base = pur.copy()
     base[is_active] = lc[is_active]                      # active: moc tu BUOI HOC CUOI (khong dung today)
@@ -141,10 +168,12 @@ def add_cohort_columns(out, hist=None):
     out["end_date_cohort"] = base + pd.to_timedelta(days, unit="D")
     # Loai don chua kich hoat + don thieu du lieu khoi cohort
     out.loc[not_activated, "end_date_cohort"] = pd.NaT
+    out.loc[frozen_latest, "end_date_cohort"] = pd.NaT          # don bao luu moi nhat: loai khoi cohort
     out.loc[base.isna() | (pkg.isna() & ~is_active), "end_date_cohort"] = pd.NaT
     out["remaining_cohort"] = leftover.round()
     out["remaining_source"] = src
     out["not_activated"] = not_activated
+    out["frozen_latest"] = frozen_latest
     ec = pd.to_datetime(out["end_date_cohort"], errors="coerce")
     out["cohort_month"] = ec.dt.strftime("%Y-%m")
     # gia han = don ke tiep cua CUNG UID (bat ky chuoi nao - Real dem ca >90 ngay)
@@ -230,6 +259,10 @@ def main():
     out["renewed_next"] = out["renew_date_n1"].notna()
 
     out["renewed"] = out["status_renew"].isin(RENEWAL)
+
+    # is_frozen per order (join theo order_id, dedup) -> cho Tab 6 (bao luu). KHONG dung cho Tab 1/2.
+    _fz = _load_is_frozen()
+    out["is_frozen"] = out["order_id"].map(_fz).fillna(0).astype(int) if _fz is not None else 0
 
     # ---- COHORT (CS view - Tab 3/4): them cot moi, KHONG sua cot Tab 1/2 ----
     out = add_cohort_columns(out)

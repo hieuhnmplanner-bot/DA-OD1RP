@@ -22,11 +22,7 @@ CONN_STR = (
 # Lay dung cac cot build_dashboard can, CO header -> map theo TEN, khong bao gio lech.
 QUERY = """
 SELECT uid, order_id, end_date_n, remain_lesson_number, total_lesson, status_renew,
-       teacher,
-       COALESCE(NULLIF(LTRIM(RTRIM(sale_close)), ''), sale) AS sale,
-       CASE WHEN LTRIM(RTRIM(close_sale_team)) NOT IN ('', 'Other', 'Not have Sale care')
-            THEN close_sale_team ELSE depart7_name_sale END AS depart7_name_sale,
-       order_price_vnd, purchase_time,
+       teacher, sale, depart7_name_sale, order_price_vnd, purchase_time,
        order_num, type_lesson, type_sale, package_name, payment_number_n_1,
        last_class_time
 FROM remaining_lesson3
@@ -78,6 +74,29 @@ def main():
     if hist is not None:
         hist.to_csv(LAST_STUDY_SEED, index=False, encoding="utf-8-sig")
         print(f"OK Da xuat {len(hist)} dong last_study_history -> {LAST_STUDY_SEED}")
+
+    # is_frozen per order (tu raw remaining_lesson Excel) -> seed cho Tab 6 (bao luu)
+    # Chi DOC file raw (giong DA1RP), KHONG sua gi. Bo qua an toan neu thieu file/cot.
+    try:
+        from config import IS_FROZEN_SEED, find_latest_files
+        lf = find_latest_files(require_today=False)
+        rl = lf.get("remaining_lesson")
+        if rl:
+            rdf = pd.read_excel(rl) if str(rl).lower().endswith(".xlsx") else pd.read_csv(rl, dtype=str)
+            if "Order ID" in rdf.columns and "Is Frozen" in rdf.columns:
+                fz = rdf[["Order ID", "Is Frozen"]].copy()
+                fz["Order ID"] = fz["Order ID"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+                fz["Is Frozen"] = pd.to_numeric(fz["Is Frozen"], errors="coerce").fillna(0).astype(int)
+                fz = fz[fz["Order ID"].ne("")].drop_duplicates("Order ID")
+                fz.columns = ["order_id", "is_frozen"]
+                fz.to_csv(IS_FROZEN_SEED, index=False, encoding="utf-8-sig")
+                print(f"OK Da xuat {len(fz)} dong is_frozen -> {IS_FROZEN_SEED}")
+            else:
+                print("   (bo qua is_frozen - file remaining_lesson thieu cot 'Order ID' / 'Is Frozen')")
+        else:
+            print("   (bo qua is_frozen - khong tim thay file remaining_lesson)")
+    except Exception as e:
+        print(f"   (bo qua is_frozen: {e})")
 
 
 if __name__ == "__main__":
