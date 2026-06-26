@@ -99,56 +99,52 @@ def _load_history():
         return None
 
 
-def add_cohort_columns(out, hist):
+def add_cohort_columns(out, hist=None):
     """Them cac cot COHORT (CS view - Tab 3/4). CHI them cot moi, KHONG dung cot Tab 1/2.
-    end_date_cohort theo 3 nhanh:
-      - ACTIVE (don moi nhat + remain hien tai > 0): hom nay + remain x 3,5  (DONG).
-      - DO (buoi thua THAT luc mua tu last_study_history, khong active): ngay mua + (do + goi) x 3,5.
-      - QUA KHU khac (khong do, khong active): ngay mua + goi x 3,5  (bo cong don chuoi).
+
+    end_date_cohort theo 2 nhanh + 1 loai tru:
+      - DANG HOC (remain > 0 VA buoi hoc cuoi trong 90 ngay gan day):
+            last_class + remaining x 3,5   (= cong thuc end_date_n cua Tab 1/2,
+            bam dung nhip hoc that, KHONG dung 'hom nay').
+      - CON LAI (nghi > 90 ngay / da xong / chua hoc buoi nao):
+            purchase + total x 3,5         (KHOA cung, co dinh - du lieu qua khu khong nhay).
+      - CHUA KICH HOAT (order_id placeholder dang 'uid_order_N'): LOAI khoi cohort
+            (end_date_cohort = NaT) -> hien o Tab 5, loc theo thang mua (pay_month).
+    (hist khong con dung - nhanh 'do' da bo.)
     """
     out = out.sort_values(["uid", "purchase_time", "order_num"]).reset_index(drop=True)
-    n = len(out)
-    out["_row"] = range(n)
     pur = pd.to_datetime(out["purchase_time"], errors="coerce")
     pkg = pd.to_numeric(out["total_lesson"], errors="coerce")
     rem = pd.to_numeric(out["remain_lesson"], errors="coerce") if "remain_lesson" in out.columns else pd.Series(0.0, index=out.index)
+    lc = pd.to_datetime(out["last_class"], errors="coerce") if "last_class" in out.columns else pd.Series(pd.NaT, index=out.index)
     today = pd.Timestamp.now().normalize()
 
-    # DO: buoi thua THAT luc mua (ban ghi last_study_history gan nhat TRUOC ngay mua)
-    act = pd.Series([pd.NA] * n, dtype="object")
-    if hist is not None and not hist.empty:
-        left = out[["_row", "uid"]].copy()
-        left["_pday"] = pur.dt.normalize()
-        left = left.dropna(subset=["_pday"]).sort_values("_pday")
-        mrg = pd.merge_asof(left, hist[["uid", "run_datetime", "remain"]],
-                            left_on="_pday", right_on="run_datetime", by="uid",
-                            direction="backward", allow_exact_matches=False)
-        act = mrg.set_index("_row")["remain"].reindex(range(n))
-    act = pd.to_numeric(act, errors="coerce")
+    # Don CHUA KICH HOAT = placeholder (order_id 'uid_order_N' - chua co ma that tu he thong hoc)
+    not_activated = out["order_id"].astype(str).str.contains("_order_", na=False)
 
-    # --- 3 NHANH ---
-    # don moi nhat moi UID = dong cuoi (da sort theo purchase); active = moi nhat + remain hien tai > 0
-    is_latest = out.groupby("uid")["_row"].transform("max").eq(out["_row"])
-    is_active = is_latest & rem.gt(0)
-    has_do = (~is_active) & act.notna()
+    # DANG HOC gan day = con remain > 0 VA co buoi hoc trong 90 ngay gan day (va da kich hoat)
+    recent_study = lc.notna() & ((today - lc).dt.days <= 90)
+    is_active = rem.gt(0) & recent_study & (~not_activated)
 
     leftover = pd.Series(0.0, index=out.index)
-    leftover[is_active] = rem[is_active]                 # active: dung buoi con HIEN TAI
-    leftover[has_do] = act[has_do].clip(lower=0)         # do: buoi thua THAT luc mua
+    leftover[is_active] = rem[is_active]                 # active: buoi con HIEN TAI
 
     src = pd.Series("quá khứ", index=out.index)
     src[is_active] = "đang chạy"
-    src[has_do] = "đo"
+    src[not_activated] = "chưa kích hoạt"
 
     base = pur.copy()
-    base[is_active] = today                              # active: moc tu HOM NAY (dong)
+    base[is_active] = lc[is_active]                      # active: moc tu BUOI HOC CUOI (khong dung today)
     goi = pkg.fillna(0)
-    goi[is_active] = 0                                   # active: end = hom nay + remain x3,5 (khong cong goi)
+    goi[is_active] = 0                                   # active: end = last_class + remain x 3,5
     days = ((leftover + goi) * DPL).round()
     out["end_date_cohort"] = base + pd.to_timedelta(days, unit="D")
+    # Loai don chua kich hoat + don thieu du lieu khoi cohort
+    out.loc[not_activated, "end_date_cohort"] = pd.NaT
     out.loc[base.isna() | (pkg.isna() & ~is_active), "end_date_cohort"] = pd.NaT
     out["remaining_cohort"] = leftover.round()
     out["remaining_source"] = src
+    out["not_activated"] = not_activated
     ec = pd.to_datetime(out["end_date_cohort"], errors="coerce")
     out["cohort_month"] = ec.dt.strftime("%Y-%m")
     # gia han = don ke tiep cua CUNG UID (bat ky chuoi nao - Real dem ca >90 ngay)
@@ -156,7 +152,7 @@ def add_cohort_columns(out, hist):
     crn = pd.to_datetime(out["cohort_renew_date"], errors="coerce")
     out["real_renewed"] = crn.notna()
     out["m90_renewed"] = crn.notna() & (crn <= ec + pd.Timedelta(days=90))
-    return out.drop(columns=["_row"])
+    return out
 
 
 def main():
@@ -236,7 +232,7 @@ def main():
     out["renewed"] = out["status_renew"].isin(RENEWAL)
 
     # ---- COHORT (CS view - Tab 3/4): them cot moi, KHONG sua cot Tab 1/2 ----
-    out = add_cohort_columns(out, _load_history())
+    out = add_cohort_columns(out)
 
     # CHOT CHAN: neu qua nhieu end_date rong -> sai cot (export headerless sai thu tu)
     _valid = float(out["end_date"].notna().mean())

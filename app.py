@@ -47,6 +47,11 @@ LANG = {
         "monthly": "Bảng tổng hợp theo tháng", "detail": "Bảng chi tiết",
         "download": "⬇️ Tải bảng chi tiết (CSV)", "no_data": "Không có dữ liệu sau khi lọc.",
         "tab_cohort_all": "3️⃣ Cohort · tất cả cấp", "tab_cohort_od1": "4️⃣ Cohort · OD1→OD2",
+        "tab_tab5": "5️⃣ Chưa kích hoạt",
+        "t5_desc": "Khách đã MUA nhưng CHƯA kích hoạt (chưa học buổi nào). Lọc theo THÁNG MUA (Pay Time). Nhóm này KHÔNG nằm trong cohort Tab 3/4.",
+        "t5_empty": "Không có đơn chưa kích hoạt trong khoảng tháng đã chọn.",
+        "t5_uid": "Số khách", "t5_ord": "Số đơn", "t5_money": "Tổng giá trị",
+        "t5_paytime": "Ngày mua (Pay Time)", "t5_value": "Giá trị đơn",
         "coh_cap": "Chỉ tính đơn ĐẦU mỗi chuỗi (gia hạn lần đầu OD1→OD2).",
         "coh_help": "ℹ️ Cách đọc tab này (cách tính cohort)",
         "coh_desc": ("Mỗi khách có một **“tháng dự kiến cần gia hạn”** = tháng họ học gần hết gói "
@@ -94,6 +99,11 @@ LANG = {
         "monthly": "Monthly summary", "detail": "Detail table",
         "download": "⬇️ Download detail (CSV)", "no_data": "No data after filtering.",
         "tab_cohort_all": "3️⃣ Cohort · all levels", "tab_cohort_od1": "4️⃣ Cohort · OD1→OD2",
+        "tab_tab5": "5️⃣ Not activated",
+        "t5_desc": "Customers who PAID but have NOT activated (no lessons yet). Filtered by PURCHASE month (Pay Time). This group is EXCLUDED from the Tab 3/4 cohort.",
+        "t5_empty": "No not-activated orders in the selected month range.",
+        "t5_uid": "Customers", "t5_ord": "Orders", "t5_money": "Total value",
+        "t5_paytime": "Pay date", "t5_value": "Order value",
         "coh_cap": "Only the FIRST order of each chain (first renewal OD1→OD2).",
         "coh_help": "ℹ️ How to read this tab (cohort method)",
         "coh_desc": ("Each customer has an **“expected renewal month”** = the month they nearly finish their package "
@@ -141,6 +151,11 @@ LANG = {
         "monthly": "按月汇总表", "detail": "明细表",
         "download": "⬇️ 下载明细 (CSV)", "no_data": "筛选后无数据。",
         "tab_cohort_all": "3️⃣ 同期群 · 全部级别", "tab_cohort_od1": "4️⃣ 同期群 · OD1→OD2",
+        "tab_tab5": "5️⃣ 未激活",
+        "t5_desc": "已付款但未激活（还没上课）的客户。按购买月份（Pay Time）筛选。该组不计入 Tab 3/4 同期群。",
+        "t5_empty": "所选月份范围内没有未激活订单。",
+        "t5_uid": "客户数", "t5_ord": "订单数", "t5_money": "总金额",
+        "t5_paytime": "购买日期", "t5_value": "订单金额",
         "coh_cap": "仅统计每个周期的第 1 单（首次续费 OD1→OD2）。",
         "coh_help": "ℹ️ 如何看本页（同期群算法）",
         "coh_desc": ("每位客户有一个**“预计续费月份”** = 他们快上完套餐的月份（按课时 + 每周约 2 节）。本页按该月份分组。\n\n"
@@ -528,9 +543,8 @@ def render_cohort_tab(df, key, t):
     # Cot "Cach tinh" tao TAI CHO (khong ghi vao CSV) -> khong lam nang file
     _rcn = pd.to_numeric(base["remaining_cohort"], errors="coerce").round().astype("Int64").astype(str)
     _tln = pd.to_numeric(base["total_lesson"], errors="coerce").round().astype("Int64").astype(str)
-    _ct = "quá khứ: ngày mua + " + _tln + " gói × 3,5"
-    _ct = _ct.mask(base["remaining_source"].eq("đo"), "đo: ngày mua + (" + _rcn + " thừa + " + _tln + " gói) × 3,5")
-    _ct = _ct.mask(base["remaining_source"].eq("đang chạy"), "đang chạy: hôm nay + " + _rcn + " buổi × 3,5")
+    _ct = "khóa: ngày mua + " + _tln + " buổi gói × 3,5"
+    _ct = _ct.mask(base["remaining_source"].eq("đang chạy"), "đang chạy: buổi học cuối + " + _rcn + " buổi × 3,5")
     base["cach_tinh"] = _ct
     colmap = [("uid", "UID"), ("order_id", "Order ID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
               ("package", "Package"), ("purchase_time", "Purchase Time"),
@@ -559,6 +573,36 @@ def render_cohort_tab(df, key, t):
                        file_name=f"cohort_{key}.csv", mime="text/csv", key=f"dlcoh_{key}")
 
 
+def render_tab5(df, t):
+    """Tab 5 - khach CHUA KICH HOAT (da mua, chua hoc). Loc theo thang mua (pay_month)."""
+    st.caption(t["t5_desc"])
+    if df.empty:
+        st.info(t["t5_empty"])
+        return
+    lang = st.session_state.get("_lang", "Tiếng Việt")
+    money = pd.to_numeric(df["real_money"], errors="coerce").fillna(0).sum() if "real_money" in df.columns else 0
+    a = st.columns(3)
+    a[0].metric(t["t5_uid"], f"{df['uid'].nunique():,}")
+    a[1].metric(t["t5_ord"], f"{len(df):,}")
+    a[2].metric(t["t5_money"], _fmt_money(money, lang))
+    colmap = [("uid", "UID"), ("order_id", "Order ID"), ("purchase_time", t["t5_paytime"]),
+              ("package", "Package"), ("total_lesson", t["coh_c_pkg"]),
+              ("real_money", t["t5_value"]), ("teacher", "Advisor"), ("sale", "Sale"),
+              ("team", "Sale Team"), ("status", "Status")]
+    cols = [(s, dd) for s, dd in colmap if s in df.columns]
+    detail = df[[s for s, _ in cols]].rename(columns=dict(cols))
+    if t["t5_paytime"] in detail.columns:
+        detail[t["t5_paytime"]] = pd.to_datetime(detail[t["t5_paytime"]], errors="coerce", format="mixed").dt.strftime("%d/%m/%Y").fillna("")
+    if t["t5_value"] in detail.columns:
+        detail[t["t5_value"]] = pd.to_numeric(detail[t["t5_value"]], errors="coerce")
+    if t["coh_c_pkg"] in detail.columns:
+        detail[t["coh_c_pkg"]] = pd.to_numeric(detail[t["coh_c_pkg"]], errors="coerce").astype("Int64")
+    detail = detail.sort_values("UID")
+    st.dataframe(detail, use_container_width=True, hide_index=True)
+    st.download_button(t["download"], detail.to_csv(index=False).encode("utf-8-sig"),
+                       file_name="tab5_chua_kich_hoat.csv", mime="text/csv", key="dl_t5")
+
+
 # ---------------- Load ----------------
 if not DATA.exists():
     up = st.file_uploader("dashboard_data.csv?", type=["csv"])
@@ -578,7 +622,9 @@ st.sidebar.header(t["filters"])
 
 _em = set(df_all["end_month"].dropna().unique())
 _cm = set(df_all["cohort_month"].dropna().unique()) if "cohort_month" in df_all.columns else set()
-months = sorted([m for m in (_em | _cm) if m and len(str(m)) == 7])
+# them thang MUA cua don chua kich hoat (placeholder) -> Tab 5 loc duoc theo pay_month
+_pm = set(df_all.loc[df_all["order_id"].astype(str).str.contains("_order_", na=False), "pay_month"].dropna().unique()) if "pay_month" in df_all.columns else set()
+months = sorted([m for m in (_em | _cm | _pm) if m and len(str(m)) == 7])
 teams = sorted([x for x in df_all["team"].dropna().unique() if x])
 
 if months:
@@ -635,9 +681,17 @@ if "cohort_month" in df_all.columns:
 else:
     df_cohort = df_all.iloc[0:0].copy()
 
+# Tab 5 (chua kich hoat): don placeholder '_order_', loc theo thang MUA (pay_month)
+_na = df_all["order_id"].astype(str).str.contains("_order_", na=False)
+mask_t5 = mask & _na
+if m_start and "pay_month" in df_all.columns:
+    mask_t5 = mask_t5 & df_all["pay_month"].between(m_start, m_end)
+df_tab5 = df_all[mask_t5].copy()
+
 st.caption(t["filtering"].format(a=m_start, b=m_end, n=(len(sel_teams) or len(teams)), o=len(df_f)))
 
-tab1, tab2, tab3, tab4 = st.tabs([t["tab_all"], t["tab_od1"], t["tab_cohort_all"], t["tab_cohort_od1"]])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [t["tab_all"], t["tab_od1"], t["tab_cohort_all"], t["tab_cohort_od1"], t["tab_tab5"]])
 with tab1:
     render_tab(df_f, "all", t)
 with tab2:
@@ -650,3 +704,5 @@ with tab4:
     coh_od1 = df_cohort[df_cohort["vc_order_num"] == 1].copy() if not df_cohort.empty else df_cohort
     st.caption(t["coh_cap"])
     render_cohort_tab(coh_od1, "coh_od1", t)
+with tab5:
+    render_tab5(df_tab5, t)
