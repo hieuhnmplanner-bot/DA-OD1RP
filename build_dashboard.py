@@ -101,17 +101,21 @@ def _load_history():
 
 def add_cohort_columns(out, hist):
     """Them cac cot COHORT (CS view - Tab 3/4). CHI them cot moi, KHONG dung cot Tab 1/2.
-    end_date_cohort = ngay mua + (remaining_cohort + total_lesson) x 3,5 (khoa cung).
-    remaining_cohort = buoi thua luc mua: tu last_study_history (do) hoac suy ra tu chuoi.
+    end_date_cohort theo 3 nhanh:
+      - ACTIVE (don moi nhat + remain hien tai > 0): hom nay + remain x 3,5  (DONG).
+      - DO (buoi thua THAT luc mua tu last_study_history, khong active): ngay mua + (do + goi) x 3,5.
+      - QUA KHU khac (khong do, khong active): ngay mua + goi x 3,5  (bo cong don chuoi).
     """
     out = out.sort_values(["uid", "purchase_time", "order_num"]).reset_index(drop=True)
     n = len(out)
     out["_row"] = range(n)
     pur = pd.to_datetime(out["purchase_time"], errors="coerce")
     pkg = pd.to_numeric(out["total_lesson"], errors="coerce")
+    rem = pd.to_numeric(out["remain_lesson"], errors="coerce") if "remain_lesson" in out.columns else pd.Series(0.0, index=out.index)
+    today = pd.Timestamp.now().normalize()
 
-    # buoi thua THAT: ban ghi last_study_history gan nhat TRUOC ngay mua (tranh remain nhay do goi moi)
-    actual = pd.Series([pd.NA] * n)
+    # DO: buoi thua THAT luc mua (ban ghi last_study_history gan nhat TRUOC ngay mua)
+    act = pd.Series([pd.NA] * n, dtype="object")
     if hist is not None and not hist.empty:
         left = out[["_row", "uid"]].copy()
         left["_pday"] = pur.dt.normalize()
@@ -119,30 +123,31 @@ def add_cohort_columns(out, hist):
         mrg = pd.merge_asof(left, hist[["uid", "run_datetime", "remain"]],
                             left_on="_pday", right_on="run_datetime", by="uid",
                             direction="backward", allow_exact_matches=False)
-        actual = mrg.set_index("_row")["remain"].reindex(range(n))
+        act = mrg.set_index("_row")["remain"].reindex(range(n))
+    act = pd.to_numeric(act, errors="coerce")
 
-    cohort_end = [pd.NaT] * n
-    rem = [pd.NA] * n
-    src = [""] * n
-    for _uid, grp in out.groupby("uid", sort=False):
-        prev = None
-        for i in grp["_row"]:
-            p, k, a = pur.iloc[i], pkg.iloc[i], actual.iloc[i]
-            if pd.isna(p) or pd.isna(k):
-                prev = None
-                continue
-            if prev is None:                      # don dau chuoi: khong co buoi thua
-                left_n, s = 0.0, "đầu chuỗi"
-            elif pd.notna(a):                     # co remain THAT tu history
-                left_n, s = max(0.0, float(a)), "đo"
-            else:                                 # suy ra tu chuoi
-                left_n, s = max(0.0, (prev - p).days / DPL), "suy ra"
-            end = p + pd.Timedelta(days=round((left_n + float(k)) * DPL))
-            cohort_end[i], rem[i], src[i] = end, int(round(left_n)), s
-            prev = end
+    # --- 3 NHANH ---
+    # don moi nhat moi UID = dong cuoi (da sort theo purchase); active = moi nhat + remain hien tai > 0
+    is_latest = out.groupby("uid")["_row"].transform("max").eq(out["_row"])
+    is_active = is_latest & rem.gt(0)
+    has_do = (~is_active) & act.notna()
 
-    out["end_date_cohort"] = cohort_end
-    out["remaining_cohort"] = rem
+    leftover = pd.Series(0.0, index=out.index)
+    leftover[is_active] = rem[is_active]                 # active: dung buoi con HIEN TAI
+    leftover[has_do] = act[has_do].clip(lower=0)         # do: buoi thua THAT luc mua
+
+    src = pd.Series("quá khứ", index=out.index)
+    src[is_active] = "đang chạy"
+    src[has_do] = "đo"
+
+    base = pur.copy()
+    base[is_active] = today                              # active: moc tu HOM NAY (dong)
+    goi = pkg.fillna(0)
+    goi[is_active] = 0                                   # active: end = hom nay + remain x3,5 (khong cong goi)
+    days = ((leftover + goi) * DPL).round()
+    out["end_date_cohort"] = base + pd.to_timedelta(days, unit="D")
+    out.loc[base.isna() | (pkg.isna() & ~is_active), "end_date_cohort"] = pd.NaT
+    out["remaining_cohort"] = leftover.round()
     out["remaining_source"] = src
     ec = pd.to_datetime(out["end_date_cohort"], errors="coerce")
     out["cohort_month"] = ec.dt.strftime("%Y-%m")

@@ -526,7 +526,10 @@ def render_cohort_tab(df, key, t):
     # Cot "Cach tinh" tao TAI CHO (khong ghi vao CSV) -> khong lam nang file
     _rcn = pd.to_numeric(base["remaining_cohort"], errors="coerce").round().astype("Int64").astype(str)
     _tln = pd.to_numeric(base["total_lesson"], errors="coerce").round().astype("Int64").astype(str)
-    base["cach_tinh"] = base["remaining_source"].fillna("") + ": (" + _rcn + " thừa + " + _tln + " gói) × 3,5"
+    _ct = "quá khứ: ngày mua + " + _tln + " gói × 3,5"
+    _ct = _ct.mask(base["remaining_source"].eq("đo"), "đo: ngày mua + (" + _rcn + " thừa + " + _tln + " gói) × 3,5")
+    _ct = _ct.mask(base["remaining_source"].eq("đang chạy"), "đang chạy: hôm nay + " + _rcn + " buổi × 3,5")
+    base["cach_tinh"] = _ct
     colmap = [("uid", "UID"), ("order_id", "Order ID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
               ("package", "Package"), ("purchase_time", "Purchase Time"),
               ("remaining_cohort", t["coh_c_remaining"]),
