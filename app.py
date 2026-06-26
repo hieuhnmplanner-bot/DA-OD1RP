@@ -523,12 +523,16 @@ def render_cohort_tab(df, key, t):
     render_cohort_breakdown_tables(base, t)
 
     st.subheader(t["detail"])
+    # Cot "Cach tinh" tao TAI CHO (khong ghi vao CSV) -> khong lam nang file
+    _rcn = pd.to_numeric(base["remaining_cohort"], errors="coerce").round().astype("Int64").astype(str)
+    _tln = pd.to_numeric(base["total_lesson"], errors="coerce").round().astype("Int64").astype(str)
+    base["cach_tinh"] = base["remaining_source"].fillna("") + ": (" + _rcn + " thừa + " + _tln + " gói) × 3,5"
     colmap = [("uid", "UID"), ("order_id", "Order ID"), ("teacher", "Advisor"), ("sale", "Sale"), ("team", "Sale Team"),
               ("package", "Package"), ("purchase_time", "Purchase Time"),
               ("remaining_cohort", t["coh_c_remaining"]),
               ("total_lesson", t["coh_c_pkg"]), ("end_date_cohort", t["coh_c_end"]),
-              ("end_date", "end_date_N"),
-              ("cohort_month", t["coh_c_month"]), ("cohort_renew_date", t["coh_c_renew"]),
+              ("end_date", "end_date_N"), ("cach_tinh", "Cách tính end_date_cohort"),
+              ("cohort_renew_date", t["coh_c_renew"]),
               ("real_renewed", t["coh_c_real"]), ("m90_renewed", t["coh_c_m90"]),
               ("status_renew", "Status Renewal")]
     cols = [(s, dd) for s, dd in colmap if s in base.columns]
